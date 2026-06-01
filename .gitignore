@@ -1,0 +1,18 @@
+# virtuelno okruzenje
+.venv/
+venv/
+
+# python privremeni fajlovi
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# kesirani skup podataka (18 MB, ponovo se preuzima sam)
+mnist.npz
+
+# izlaz koji se generise iz results/
+figures/
+checkpoints/
+
+# PyCharm
+.idea/
