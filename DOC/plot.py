@@ -134,6 +134,9 @@ if cr is not None:
     a2.grid(alpha=.3)
     save(fig, "fig4_fault_tolerance")
 
+# Najslabija figura: pokazuje samo da vise radnika salje vise bajtova, sto je
+# ocekivano. Figura 7 istu temu obradjuje sa stvarnim rezultatom, pa ova moze
+# da se izostavi iz rada ako treba skratiti.
 if runs:
     fig, ax = plt.subplots(figsize=(6, 4))
     for n, d in sorted(runs.items()):

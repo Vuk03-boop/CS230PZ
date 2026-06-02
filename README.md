@@ -24,9 +24,12 @@ balancing, a middleware interceptor chain and a SQLite metrics store.
 
 ## Running
 
-Run everything from the project root, so that `N1` and `N2` are importable:
+Run everything from the project root and put the root on `PYTHONPATH`, so that
+`N1` and `N2` are importable. `run_experiments.sh` does this for you; if you
+launch a process by hand you have to do it yourself:
 
 ```bash
+export PYTHONPATH=.                                      # or use: python -m N1.server
 python -c "from N1 import common; common.load_train()"   # fetch MNIST once, before anything parallel
 bash DOC/run_experiments.sh
 python DOC/plot.py
@@ -35,10 +38,15 @@ python DOC/plot.py
 Or one configuration by hand:
 
 ```bash
+export PYTHONPATH=.
 python N1/server.py --workers 4 --mode sync --balance dynamic \
        --epochs 10 --out results/run.csv &
 for i in 1 2 3 4; do python N1/worker.py --id $i --delay-per-sample 0.0001 & done
 ```
+
+Without `PYTHONPATH`, `python N1/server.py` fails with
+`ModuleNotFoundError: No module named 'N2'`, because Python puts the *script's*
+directory on `sys.path`, not the directory you ran it from.
 
 Fast end-to-end check of every mode, no MNIST download needed:
 
