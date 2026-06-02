@@ -237,8 +237,8 @@ oporavi od njega.
 izmeni, a da ni pošiljalac ni primalac ne znaju da postoji. Termin je iz
 Tanenbaum & Van Steen; isti obrazac je servlet filter u Javi ili gRPC interceptor.
 
-Konkretna korist ovde: kompresija gradijenata, brojanje bajtova, veštačko
-kašnjenje i tracing — **bez ijednog `if args.compress` unutar petlje za obuku**.
+Konkretna korist ovde: kompresija gradijenata, brojanje bajtova i veštačko
+kašnjenje — **bez ijednog `if args.compress` unutar petlje za obuku**.
 
 ### Dva nivoa kuka
 

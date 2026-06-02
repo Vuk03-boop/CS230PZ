@@ -208,33 +208,8 @@ class LatencyInjector(Interceptor):
         return {"one_way_seconds": self.seconds, "delayed_messages": self.n}
 
 
-# Ispisuje svaku poruku; pomocno sredstvo za otklanjanje gresaka.
-class Tracer(Interceptor):
-
-    name = "tracer"
-
-    # Postavlja oznaku ispisa i ukljucenost tragaca.
-    def __init__(self, tag="", enabled=True):
-        self.tag = tag
-        self.enabled = enabled
-
-    # Ispisuje tip poruke koja se salje.
-    def before_send(self, obj, ctx):
-        if self.enabled:
-            t = obj.get("type", "?") if isinstance(obj, dict) else "?"
-            print(f"    [trace {self.tag}] -> {t}")
-        return obj
-
-    # Ispisuje tip poruke koja je primljena.
-    def after_recv(self, obj, ctx):
-        if self.enabled:
-            t = obj.get("type", "?") if isinstance(obj, dict) else "?"
-            print(f"    [trace {self.tag}] <- {t}")
-        return obj
-
-
 # Sastavlja lanac presretaca na osnovu argumenata komandne linije.
-def build(compress_f32=False, zlib_level=0, latency=0.0, trace=False, tag=""):
+def build(compress_f32=False, zlib_level=0, latency=0.0):
     items = []
     if compress_f32:
         items.append(Float32Gradients())
@@ -243,6 +218,4 @@ def build(compress_f32=False, zlib_level=0, latency=0.0, trace=False, tag=""):
     items.append(Metrics())
     if latency:
         items.append(LatencyInjector(latency))
-    if trace:
-        items.append(Tracer(tag))
     return Chain(items)

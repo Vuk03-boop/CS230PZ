@@ -9,11 +9,11 @@ balancing, a middleware interceptor chain and a SQLite metrics store.
 
 | file | role |
 |---|---|
-| `N1/common.py` | data set (MNIST, or `DATASET=synthetic`), sharding, model, gradients |
+| `N1/common.py` | data set (MNIST, or `DATASET=synthetic`), model, gradients |
 | `N1/net.py` | length-prefixed framing over TCP; runs messages through the interceptor chain |
-| `N2/interceptors.py` | middleware: float32 gradients, deflate, metrics, injected latency, tracing |
+| `N2/interceptors.py` | middleware: float32 gradients, deflate, metrics, injected latency |
 | `N1/server.py` | parameter server: barrier, failure detection, work allocation, logging |
-| `N1/worker.py` | worker node: local gradients, failure injection, static or server-driven schedule |
+| `N1/worker.py` | worker node: local gradients, failure injection, server-driven schedule |
 | `N2/balancer.py` | throughput estimation and batch-size allocation |
 | `N2/checkpoint.py` | atomic weight checkpoints so the server itself is recoverable |
 | `N2/store.py` | SQLite schema and read helpers |
@@ -24,17 +24,27 @@ balancing, a middleware interceptor chain and a SQLite metrics store.
 
 ## Running
 
+Run everything from the project root, so that `N1` and `N2` are importable:
+
 ```bash
-python -c "import [N1/common.py](jetbrains://pycharm/navigate/reference?project=CS320Projekat&path=N1%2Fcommon.py); common.load_train()"    # fetch MNIST once, before anything parallel
-bash run_experiments.sh
-python plot.py
+python -c "from N1 import common; common.load_train()"   # fetch MNIST once, before anything parallel
+bash DOC/run_experiments.sh
+python DOC/plot.py
 ```
 
 Or one configuration by hand:
 
 ```bash
-python server.py --workers 4 --mode sync --balance dynamic --out results/run.csv &
-for i in 1 2 3 4; do python worker.py --id $i --workers 4 --delay-per-sample 0.0001 & done
+python N1/server.py --workers 4 --mode sync --balance dynamic \
+       --epochs 10 --out results/run.csv &
+for i in 1 2 3 4; do python N1/worker.py --id $i --delay-per-sample 0.0001 & done
+```
+
+Fast end-to-end check of every mode, no MNIST download needed:
+
+```bash
+python smoke_test.py          # all seven scenarios
+python smoke_test.py sync     # just one
 ```
 
 ## How the pieces map onto the grading sheet
@@ -85,7 +95,7 @@ switched on.
 
 ## Measured results (synthetic task, 3 workers, one straggler at 4× per-sample cost)
 
-| | static shard | dynamic balancing |
+| | static split | dynamic balancing |
 |---|---|---|
 | samples per worker per round | 32 / 32 / 32 | 12 / 45 / 39 |
 | seconds per worker per round | 0.0140 / 0.0049 / 0.0050 | 0.0067 / 0.0064 / 0.0065 |

@@ -31,12 +31,12 @@ run() {
 
   echo "=== $label ==="
   python server.py --workers "$n" --port "$PORT" --db "$DB" --label "$label" \
-        --out "results/$label.csv" "${sflags[@]}" &
+        --epochs "$EPOCHS" --out "results/$label.csv" "${sflags[@]}" &
   local srv=$!
   wait_for_port
   for i in $(seq 1 "$n"); do
-    python worker.py --id "$i" --workers "$n" --port "$PORT" \
-           --epochs "$EPOCHS" --compute-delay "$DELAY" "${wflags[@]}" &
+    python worker.py --id "$i" --port "$PORT" \
+           --compute-delay "$DELAY" "${wflags[@]}" &
   done
   wait $srv || true
   wait 2>/dev/null || true
@@ -52,8 +52,8 @@ run sync_n2  2 --mode sync
 run sync_n4  4 --mode sync
 run async_n4 4 --mode async
 
-run crash_n4  4 --mode sync -- --crash-at-epoch 3
-run freeze_n4 4 --mode sync --timeout 5 -- --freeze-at-epoch 3
+run crash_n4  4 --mode sync -- --crash-at-round 150
+run freeze_n4 4 --mode sync --timeout 5 -- --freeze-at-round 150
 
 run compress_n4 4 --mode sync -- --compress
 run zlib_n4     4 --mode sync --zlib 6 -- --compress --zlib 6
@@ -61,11 +61,12 @@ run latency_n4  4 --mode sync --latency 0.005 -- --latency 0.005
 
 echo "=== static_n4 (straggler, no balancing) ==="
 python server.py --workers 4 --mode sync --port "$PORT" --db "$DB" \
-       --label static_n4 --out results/static_n4.csv --balance static &
+       --label static_n4 --out results/static_n4.csv --balance static \
+       --batch-size 32 --epochs "$EPOCHS" &
 srv=$!; wait_for_port
-python worker.py --id 1 --workers 4 --port "$PORT" --epochs "$EPOCHS" --delay-per-sample "$SLOW" &
+python worker.py --id 1 --port "$PORT" --delay-per-sample "$SLOW" &
 for i in 2 3 4; do
-  python worker.py --id "$i" --workers 4 --port "$PORT" --epochs "$EPOCHS" --delay-per-sample "$FAST" &
+  python worker.py --id "$i" --port "$PORT" --delay-per-sample "$FAST" &
 done
 wait $srv || true; wait 2>/dev/null || true; sleep 1
 
@@ -74,19 +75,19 @@ python server.py --workers 4 --mode sync --port "$PORT" --db "$DB" \
        --label balanced_n4 --out results/balanced_n4.csv \
        --balance dynamic --batch-size 32 --epochs "$EPOCHS" &
 srv=$!; wait_for_port
-python worker.py --id 1 --workers 4 --port "$PORT" --delay-per-sample "$SLOW" &
+python worker.py --id 1 --port "$PORT" --delay-per-sample "$SLOW" &
 for i in 2 3 4; do
-  python worker.py --id "$i" --workers 4 --port "$PORT" --delay-per-sample "$FAST" &
+  python worker.py --id "$i" --port "$PORT" --delay-per-sample "$FAST" &
 done
 wait $srv || true; wait 2>/dev/null || true; sleep 1
 
 echo "=== checkpoint_n2: server dies and resumes ==="
 python server.py --workers 2 --mode sync --port "$PORT" --db "$DB" \
-       --label checkpoint_a --out results/checkpoint_a.csv \
+       --label checkpoint_a --out results/checkpoint_a.csv --epochs 3 \
        --checkpoint checkpoints/w.npz --checkpoint-every 10 &
 srv=$!; wait_for_port
 for i in 1 2; do
-  python worker.py --id "$i" --workers 2 --port "$PORT" --epochs 3 --compute-delay "$DELAY" &
+  python worker.py --id "$i" --port "$PORT" --compute-delay "$DELAY" &
 done
 sleep 6
 echo "[!] killing the server"
@@ -94,11 +95,11 @@ kill -9 $srv 2>/dev/null || true
 wait 2>/dev/null || true
 sleep 1
 python server.py --workers 2 --mode sync --port "$PORT" --db "$DB" \
-       --label checkpoint_b --out results/checkpoint_b.csv \
+       --label checkpoint_b --out results/checkpoint_b.csv --epochs 3 \
        --checkpoint checkpoints/w.npz --checkpoint-every 10 --resume &
 srv=$!; wait_for_port
 for i in 1 2; do
-  python worker.py --id "$i" --workers 2 --port "$PORT" --epochs 3 --compute-delay "$DELAY" &
+  python worker.py --id "$i" --port "$PORT" --compute-delay "$DELAY" &
 done
 wait $srv || true; wait 2>/dev/null || true
 

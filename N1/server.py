@@ -21,19 +21,18 @@ p.add_argument("--out", default="results/run.csv")
 p.add_argument("--startup-limit", type=float, default=180.0,
                help="give up if the cluster never forms")
 p.add_argument("--balance", choices=["static", "dynamic"], default="static",
-               help="static: workers use their own stride shard (original). "
-                    "dynamic: the server hands out row ranges sized to each "
-                    "worker's measured throughput.")
+               help="static: every worker gets an equal share of the global "
+                    "batch. dynamic: shares are sized to each worker's "
+                    "measured throughput.")
 p.add_argument("--batch-size", type=int, default=32,
                help="per-worker batch; the global batch is this times --workers")
 p.add_argument("--epochs", type=int, default=10,
-               help="sample budget in dynamic mode (the server owns termination)")
+               help="sample budget (the server owns termination)")
 p.add_argument("--min-batch", type=int, default=4)
 p.add_argument("--zlib", type=int, default=0, metavar="LEVEL",
                help="deflate every message (1-9). Workers must match.")
 p.add_argument("--latency", type=float, default=0.0,
                help="injected one-way delay per message (s)")
-p.add_argument("--trace", action="store_true", help="print every message")
 p.add_argument("--db", default="results/runs.sqlite",
                help="SQLite metrics database ('' to disable)")
 p.add_argument("--label", default=None, help="run label in the database")
@@ -43,11 +42,9 @@ p.add_argument("--resume", action="store_true", help="start from --checkpoint")
 args = p.parse_args()
 
 SYNC = args.mode == "sync"
-DYNAMIC = args.balance == "dynamic"
 LABEL = args.label or os.path.splitext(os.path.basename(args.out))[0]
 
-CHAIN = interceptors.build(zlib_level=args.zlib, latency=args.latency,
-                           trace=args.trace, tag="srv")
+CHAIN = interceptors.build(zlib_level=args.zlib, latency=args.latency)
 
 W = common.init_weights()
 X_test, Y_test = common.load_test()
@@ -61,14 +58,12 @@ if args.resume and args.checkpoint:
         print(f"[*] resumed from {args.checkpoint} at round {rnd}, "
               f"{samples_total} samples")
 
-BAL = None
-if DYNAMIC:
-    n_train = len(common.load_train()[0])
-    BAL = balancer.WorkBalancer(n_train, args.batch_size, args.workers,
-                                args.epochs, mode="dynamic",
-                                min_batch=args.min_batch)
-    BAL.samples_done = samples_total
-    BAL.cursor = samples_total % n_train
+n_train = len(common.load_train()[0])
+BAL = balancer.WorkBalancer(n_train, args.batch_size, args.workers,
+                            args.epochs, mode=args.balance,
+                            min_batch=args.min_batch)
+BAL.samples_done = samples_total
+BAL.cursor = samples_total % n_train
 
 lsock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 lsock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -134,9 +129,9 @@ def write_row(train_loss, staleness, n_samples, barrier_wait=0.0):
                         meta=f"{args.mode}/{args.balance}")
     if rnd % 50 == 0 or rnd == 1:
         DB.flush()
-        extra = f" | imbalance {BAL.imbalance():.2f}x" if BAL else ""
         print(f"round {rnd:04d} | train {train_loss:.4f} | test_acc {last_eval[1]:.4f} "
-              f"| workers {len(active)} | t {now - t0:6.1f}s{extra}")
+              f"| workers {len(active)} | t {now - t0:6.1f}s "
+              f"| imbalance {BAL.imbalance():.2f}x")
 
 
 # Salje poruku jednom radniku; prekinutu vezu tretira kao otkaz cvora.
@@ -162,8 +157,7 @@ def drop(sock, reason):
             active.discard(wid)
             responded.discard(wid)
             released_at.pop(wid, None)
-            if BAL:
-                BAL.forget(wid)
+            BAL.forget(wid)
             DB.event(rnd, wid, "evicted", reason)
             print(f"[!] {wid} removed at round {rnd} ({reason}); "
                   f"{len(active)} worker(s) left")
@@ -205,10 +199,10 @@ def resolve_barrier():
     responded.clear()
     first_push_at = None
 
-    if BAL and BAL.exhausted:
+    if BAL.exhausted:
         stopping = True
         print("[*] sample budget spent, telling the workers to stop")
-    broadcast(BAL.assign(active) if (BAL and not stopping) else None)
+    broadcast(None if stopping else BAL.assign(active))
 
 
 while True:
@@ -247,17 +241,14 @@ while True:
                 t0 = t_last_round = time.time()
                 print("[*] all workers present, timing starts now")
 
-            if DYNAMIC and SYNC:
-                if just_started:
-                    broadcast(BAL.assign(active))
-                elif started:
-                    send_to(wid, {"weights": W, "round": rnd,
-                                  "assign": BAL.assign_single(wid)})
-            elif DYNAMIC:
+            if not SYNC:
                 send_to(wid, {"weights": W, "round": rnd,
                               "assign": BAL.assign_single(wid)})
-            else:
-                send_to(wid, {"weights": W, "round": rnd})
+            elif just_started:
+                broadcast(BAL.assign(active))
+            elif started:
+                send_to(wid, {"weights": W, "round": rnd,
+                              "assign": BAL.assign_single(wid)})
 
         elif msg["type"] == "PUSH":
             if wid not in active:
@@ -268,24 +259,19 @@ while True:
             staleness = rnd - msg["round"]
             if wid in released_at:
                 elapsed = now - released_at[wid]
-                if BAL:
-                    BAL.record(wid, msg["n"], elapsed)
+                BAL.record(wid, msg["n"], elapsed)
                 DB.worker_row(rnd + 1, wid, msg["n"], round(elapsed, 5),
                               int(staleness))
 
             if not SYNC:
                 W -= args.lr * msg["grads"]
                 write_row(msg["loss"], staleness, msg["n"])
-                if BAL:
-                    a = BAL.assign_single(wid)
-                    if a is None:
-                        stopping = True
-                        send_to(wid, {"weights": W, "round": rnd, "stop": True})
-                    else:
-                        send_to(wid, {"weights": W, "round": rnd, "assign": a})
-                        released_at[wid] = time.time()
+                a = BAL.assign_single(wid)
+                if a is None:
+                    stopping = True
+                    send_to(wid, {"weights": W, "round": rnd, "stop": True})
                 else:
-                    send_to(wid, {"weights": W, "round": rnd})
+                    send_to(wid, {"weights": W, "round": rnd, "assign": a})
                     released_at[wid] = time.time()
             elif wid not in responded:
                 if first_push_at is None:
@@ -317,8 +303,7 @@ report = CHAIN.report()
 DB.finish(rnd, samples_total, bytes_total, report)
 print(f"[*] done: {rnd} rounds, {samples_total} samples, "
       f"{bytes_total / 1e6:.2f} MB received, {time.time() - t0:.1f}s")
-if BAL:
-    print(f"[*] throughput: {BAL.summary()} | imbalance {BAL.imbalance():.2f}x")
+print(f"[*] throughput: {BAL.summary()} | imbalance {BAL.imbalance():.2f}x")
 for name, s in report.items():
     print(f"[*] interceptor {name}: {s}")
 f.close()

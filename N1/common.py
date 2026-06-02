@@ -77,11 +77,6 @@ def load_test():
     return X[N_TRAIN:N_TRAIN + N_TEST], _onehot(y[N_TRAIN:N_TRAIN + N_TEST])
 
 
-# Deli skup na disjunktne delove i vraca deo koji pripada datom radniku.
-def shard(X, Y, worker_index, n_workers):
-    return X[worker_index::n_workers], Y[worker_index::n_workers]
-
-
 # Inicijalizuje matricu tezina na nule; poslednji red je bias.
 def init_weights():
     return np.zeros((N_FEATURES + 1, N_CLASSES))

@@ -3,7 +3,7 @@ import csv
 import os
 import time
 
-import common
+from N1 import common
 
 p = argparse.ArgumentParser()
 p.add_argument("--batch-size", type=int, default=32)

@@ -165,7 +165,7 @@ if wb is not None or (st is not None and dy is not None):
     a1.legend(fontsize=8)
     a1.grid(alpha=.3)
 
-    for d, lab in ((st, "static shard"), (dy, "dynamic balancing")):
+    for d, lab in ((st, "static split"), (dy, "dynamic balancing")):
         if d is not None and "barrier_wait" in d:
             a2.plot(d["round"], d["barrier_wait"].rolling(20, min_periods=1).mean(),
                     label=lab)

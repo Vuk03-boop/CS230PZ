@@ -4,7 +4,7 @@ import sys
 import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-ENV = dict(os.environ, DATASET="synthetic")
+ENV = dict(os.environ, DATASET="synthetic", PYTHONPATH=HERE)
 PY = sys.executable
 
 
@@ -45,11 +45,12 @@ if __name__ == "__main__":
 
     if which in ("all", "sync"):
         run_cluster(
-            "sync, static shard, 2 workers, 1 epoch", 5701,
-            ["--workers", "2", "--mode", "sync", "--out", "results/t_sync.csv",
+            "sync, equal split, 2 workers, 1 epoch", 5701,
+            ["--workers", "2", "--mode", "sync", "--epochs", "1",
+             "--out", "results/t_sync.csv",
              "--label", "t_sync", "--db", "results/t.sqlite"],
-            [["--id", "1", "--workers", "2", "--epochs", "1"],
-             ["--id", "2", "--workers", "2", "--epochs", "1"]])
+            [["--id", "1"],
+             ["--id", "2"]])
 
     if which in ("all", "dynamic"):
         run_cluster(
@@ -58,50 +59,52 @@ if __name__ == "__main__":
              "--batch-size", "32", "--epochs", "1",
              "--out", "results/t_bal.csv", "--label", "t_bal",
              "--db", "results/t.sqlite"],
-            [["--id", "1", "--workers", "3", "--delay-per-sample", "0.0004"],
-             ["--id", "2", "--workers", "3", "--delay-per-sample", "0.0001"],
-             ["--id", "3", "--workers", "3", "--delay-per-sample", "0.0001"]])
+            [["--id", "1", "--delay-per-sample", "0.0004"],
+             ["--id", "2", "--delay-per-sample", "0.0001"],
+             ["--id", "3", "--delay-per-sample", "0.0001"]])
 
     if which in ("all", "static_straggler"):
         run_cluster(
-            "sync, STATIC shard, same straggler (for comparison)", 5703,
+            "sync, STATIC split, same straggler (for comparison)", 5703,
             ["--workers", "3", "--mode", "sync", "--balance", "static",
-             "--out", "results/t_static.csv", "--label", "t_static",
-             "--db", "results/t.sqlite"],
-            [["--id", "1", "--workers", "3", "--epochs", "1", "--delay-per-sample", "0.0004"],
-             ["--id", "2", "--workers", "3", "--epochs", "1", "--delay-per-sample", "0.0001"],
-             ["--id", "3", "--workers", "3", "--epochs", "1", "--delay-per-sample", "0.0001"]])
+             "--epochs", "1", "--out", "results/t_static.csv",
+             "--label", "t_static", "--db", "results/t.sqlite"],
+            [["--id", "1", "--delay-per-sample", "0.0004"],
+             ["--id", "2", "--delay-per-sample", "0.0001"],
+             ["--id", "3", "--delay-per-sample", "0.0001"]])
 
     if which in ("all", "async"):
         run_cluster(
             "async, 2 workers", 5704,
-            ["--workers", "2", "--mode", "async", "--out", "results/t_async.csv",
+            ["--workers", "2", "--mode", "async", "--epochs", "1",
+             "--out", "results/t_async.csv",
              "--label", "t_async", "--db", "results/t.sqlite"],
-            [["--id", "1", "--workers", "2", "--epochs", "1"],
-             ["--id", "2", "--workers", "2", "--epochs", "1"]])
+            [["--id", "1"],
+             ["--id", "2"]])
 
     if which in ("all", "zlib"):
         run_cluster(
             "sync + float32 + deflate interceptors", 5705,
-            ["--workers", "2", "--mode", "sync", "--zlib", "6",
+            ["--workers", "2", "--mode", "sync", "--zlib", "6", "--epochs", "1",
              "--out", "results/t_zlib.csv", "--label", "t_zlib",
              "--db", "results/t.sqlite"],
-            [["--id", "1", "--workers", "2", "--epochs", "1", "--compress", "--zlib", "6"],
-             ["--id", "2", "--workers", "2", "--epochs", "1", "--compress", "--zlib", "6"]])
+            [["--id", "1", "--compress", "--zlib", "6"],
+             ["--id", "2", "--compress", "--zlib", "6"]])
 
     if which in ("all", "crash"):
         run_cluster(
-            "fault tolerance: worker-2 crashes at epoch 1", 5706,
-            ["--workers", "2", "--mode", "sync", "--out", "results/t_crash.csv",
+            "fault tolerance: worker-2 crashes at round 40", 5706,
+            ["--workers", "2", "--mode", "sync", "--epochs", "1",
+             "--out", "results/t_crash.csv",
              "--label", "t_crash", "--db", "results/t.sqlite"],
-            [["--id", "1", "--workers", "2", "--epochs", "3"],
-             ["--id", "2", "--workers", "2", "--epochs", "3", "--crash-at-epoch", "1"]])
+            [["--id", "1"],
+             ["--id", "2", "--crash-at-round", "40"]])
 
     if which in ("all", "freeze"):
         run_cluster(
-            "fault tolerance: worker-2 freezes at epoch 1 (timeout 4s)", 5707,
+            "fault tolerance: worker-2 freezes at round 40 (timeout 4s)", 5707,
             ["--workers", "2", "--mode", "sync", "--timeout", "4",
-             "--out", "results/t_freeze.csv", "--label", "t_freeze",
-             "--db", "results/t.sqlite"],
-            [["--id", "1", "--workers", "2", "--epochs", "2"],
-             ["--id", "2", "--workers", "2", "--epochs", "2", "--freeze-at-epoch", "1"]])
+             "--epochs", "1", "--out", "results/t_freeze.csv",
+             "--label", "t_freeze", "--db", "results/t.sqlite"],
+            [["--id", "1"],
+             ["--id", "2", "--freeze-at-round", "40"]])
