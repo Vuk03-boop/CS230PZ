@@ -6,7 +6,6 @@ set -euo pipefail
 # PYTHONPATH, pa skripta radi bez obzira odakle je pozvana.
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 cd "$ROOT"
-export PYTHONPATH="$ROOT"
 
 # Bira interpreter: prvo iz .venv ako postoji, inace onaj sa PATH-a. Golo
 # "python" u bash-u na Windows-u pokazuje na sistemski Python bez numpy-ja.
@@ -20,6 +19,16 @@ if [[ -z "${PY:-}" ]]; then
     PY=python
   fi
 fi
+export PYTHONPATH="$ROOT"
+
+# WSL ne prosledjuje promenljive okruzenja Windows procesima, pa Windows python
+# ne vidi PYTHONPATH i uvoz paketa N1 puca. WSLENV nabraja koje promenljive da
+# se proslede, a zastavica /p uz to prevodi "/mnt/c/..." u "C:\...". Git bash
+# prevodi sam i nema wslpath, pa se ova grana tamo preskace.
+if [[ "$PY" == *.exe ]] && command -v wslpath >/dev/null 2>&1; then
+  export WSLENV="PYTHONPATH/p${WSLENV:+:$WSLENV}"
+fi
+
 echo "[*] interpreter: $PY"
 
 DELAY=${DELAY:-0.004}
@@ -33,13 +42,26 @@ mkdir -p results figures checkpoints
 
 "$PY" -c "from N1 import common; common.load_train(); common.load_test(); print('[*] dataset ready')"
 
-# Ceka da server otvori port pre nego sto se pokrenu radnici.
+# Ceka da server otvori port pre nego sto se pokrenu radnici. Provera se radi
+# istim interpreterom kojim se pokrece i server, a ne preko /dev/tcp: pod WSL-om
+# je server Windows proces, a WSL ne vidi njegov 127.0.0.1, pa bi provera iz
+# bash-a uvek javljala da servera nema. Ovako proba dolazi iz istog mreznog
+# prostora kao i radnici.
 wait_for_port() {
-  for _ in $(seq 1 50); do
-    (echo >/dev/tcp/127.0.0.1/"$PORT") 2>/dev/null && return 0
-    sleep 0.1
-  done
-  echo "server never came up" >&2; exit 1
+  if ! "$PY" - "$PORT" <<'PROBE'
+import socket, sys, time
+port = int(sys.argv[1])
+for _ in range(100):
+    try:
+        socket.create_connection(("127.0.0.1", port), 0.2).close()
+        sys.exit(0)
+    except OSError:
+        time.sleep(0.1)
+sys.exit(1)
+PROBE
+  then
+    echo "server never came up" >&2; exit 1
+  fi
 }
 
 # Pokrece jedan eksperiment: server i zadati broj radnika, pa ceka da se zavrse.
