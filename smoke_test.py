@@ -109,3 +109,25 @@ if __name__ == "__main__":
              "--label", "t_freeze", "--db", SMOKE_DB],
             [["--id", "1"],
              ["--id", "2", "--freeze-at-round", "40"]])
+
+    # Checkpoint nije bio pokriven nijednim scenarijem, pa je greska u
+    # checkpoint.save() dugo prolazila neprimeceno: rusila je server na svakom
+    # upisu, a to se videlo samo u run_experiments.sh. Ovaj scenario samo
+    # proverava da se checkpoint uopste napravi i procita.
+    if which in ("all", "checkpoint"):
+        ckpt = os.path.join(HERE, "results", "smoke", "w.npz")
+        if os.path.exists(ckpt):
+            os.remove(ckpt)
+        run_cluster(
+            "checkpoint: server writes weights every 10 rounds", 5708,
+            ["--workers", "2", "--mode", "sync", "--epochs", "1",
+             "--checkpoint", ckpt, "--checkpoint-every", "10",
+             "--label", "t_ckpt", "--db", SMOKE_DB],
+            [["--id", "1"],
+             ["--id", "2"]])
+        if os.path.exists(ckpt):
+            from N2 import checkpoint
+            got = checkpoint.load(ckpt)
+            print(f"   checkpoint OK: round {got[1]}, {got[2]} samples")
+        else:
+            print("   *** CHECKPOINT NEVER WRITTEN ***")

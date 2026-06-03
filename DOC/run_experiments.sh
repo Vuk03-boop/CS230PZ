@@ -166,5 +166,5 @@ done
 wait $srv || true; wait 2>/dev/null || true
 
 echo
-echo "all runs complete. results/*.csv, results/runs.sqlite"
+echo "all runs complete -> $DB"
 echo "now: python DOC/plot.py"

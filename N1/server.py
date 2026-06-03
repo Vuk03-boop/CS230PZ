@@ -113,6 +113,11 @@ def write_row(train_loss, staleness, n_samples, barrier_wait=0.0):
     t_last_round = now
     if args.checkpoint and args.checkpoint_every and \
             rnd % args.checkpoint_every == 0:
+        # Baza se potvrdjuje pre checkpointa da bi posle pada vazilo
+        # "baza ide bar do runde koja pise u checkpointu". Bez ovoga se, uz
+        # potvrdu na svakih 50 rundi, gubi do 49 rundi metrika kad server
+        # bude ubijen, a checkpoint runovi ga ubijaju namerno.
+        DB.flush()
         checkpoint.save(args.checkpoint, W, rnd, samples_total,
                         meta=f"{args.mode}/{args.balance}")
     if rnd % 50 == 0 or rnd == 1:

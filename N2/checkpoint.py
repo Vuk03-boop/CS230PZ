@@ -9,12 +9,23 @@ def save(path, W, rnd, samples, meta=None):
     d = os.path.dirname(path) or "."
     os.makedirs(d, exist_ok=True)
     tmp = os.path.join(d, f".{os.path.basename(path)}.{os.getpid()}.tmp.npz")
-    np.savez(tmp, W=W, round=np.int64(rnd), samples=np.int64(samples),
-             saved_at=np.float64(time.time()),
-             meta=np.array(str(meta or ""), dtype=object), allow_pickle=True)
-    with open(tmp, "rb") as f:
-        os.fsync(f.fileno())
-    os.replace(tmp, path)
+    # Fajl se otvara za upis i fsync ide nad tim istim deskriptorom. Ranije se
+    # posle upisa ponovo otvarao u "rb" pa se nad njim zvao fsync: na Linux-u to
+    # prolazi, ali na Windows-u podize OSError "Bad file descriptor", jer _commit
+    # trazi pravo upisa. Zbog toga je svaki checkpoint rusio server.
+    try:
+        with open(tmp, "wb") as f:
+            np.savez(f, W=W, round=np.int64(rnd), samples=np.int64(samples),
+                     saved_at=np.float64(time.time()),
+                     meta=np.array(str(meta or ""), dtype=object))
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, path)
+    except BaseException:
+        # Da nedovrsen tmp ne bi ostajao u direktorijumu posle greske ili Ctrl+C.
+        if os.path.exists(tmp):
+            os.remove(tmp)
+        raise
     return path
 
 
