@@ -65,23 +65,40 @@ PROBE
 }
 
 # Pokrece jedan eksperiment: server i zadati broj radnika, pa ceka da se zavrse.
+#
+#   run <labela> <n> [zastavice servera] -- [za sve radnike] -- [samo za radnika 1]
+#
+# Treca grupa postoji zbog ubrizgavanja kvara: kvar sme da pogodi samo jedan
+# cvor. Ako istu zastavicu dobiju svi radnici, ceo klaster padne u istoj rundi,
+# server zavrsi obuku i figura 4 nema sta da pokaze, jer se ne vidi da obuka
+# prezivljava gubitak cvora.
 run() {
   local label=$1 n=$2; shift 2
-  local sflags=() wflags=()
+  local sflags=() wflags=() w1flags=()
   while [[ $# -gt 0 && $1 != "--" ]]; do sflags+=("$1"); shift; done
   shift || true
-  wflags=("$@")
+  while [[ $# -gt 0 && $1 != "--" ]]; do wflags+=("$1"); shift; done
+  shift || true
+  w1flags=("$@")
 
   echo "=== $label ==="
   "$PY" N1/server.py --workers "$n" --port "$PORT" --db "$DB" --label "$label" \
         --epochs "$EPOCHS" --out "results/$label.csv" "${sflags[@]}" &
   local srv=$!
   wait_for_port
-  for i in $(seq 1 "$n"); do
+  "$PY" N1/worker.py --id 1 --port "$PORT" --compute-delay "$DELAY" \
+         "${wflags[@]}" "${w1flags[@]}" &
+  for i in $(seq 2 "$n"); do
     "$PY" N1/worker.py --id "$i" --port "$PORT" \
            --compute-delay "$DELAY" "${wflags[@]}" &
   done
   wait $srv || true
+
+  # Zamrznut radnik po definiciji nikad ne izlazi sam. Golo "wait" bi zato ovde
+  # blokiralo zauvek i zaustavilo sve eksperimente posle ovog, pa se ostaci gase
+  # eksplicitno.
+  sleep 1
+  kill $(jobs -pr) 2>/dev/null || true
   wait 2>/dev/null || true
   sleep 1
 }
@@ -95,8 +112,8 @@ run sync_n2  2 --mode sync
 run sync_n4  4 --mode sync
 run async_n4 4 --mode async
 
-run crash_n4  4 --mode sync -- --crash-at-round 150
-run freeze_n4 4 --mode sync --timeout 5 -- --freeze-at-round 150
+run crash_n4  4 --mode sync -- -- --crash-at-round 150
+run freeze_n4 4 --mode sync --timeout 5 -- -- --freeze-at-round 150
 
 run compress_n4 4 --mode sync -- --compress
 run zlib_n4     4 --mode sync --zlib 6 -- --compress --zlib 6
