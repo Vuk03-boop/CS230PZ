@@ -3,7 +3,6 @@ import os
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-import pandas as pd
 
 from N2 import store
 
@@ -12,13 +11,9 @@ DB = os.path.join(R, "runs.sqlite")
 os.makedirs(FIG, exist_ok=True)
 
 
-# Ucitava metrike jednog runa iz CSV-a, a ako ga nema onda iz baze.
+# Ucitava metrike jednog runa iz baze. Ako je ista labela pokretana vise puta,
+# uzima se poslednji run.
 def load(name):
-    path = os.path.join(R, name + ".csv")
-    if os.path.exists(path):
-        d = pd.read_csv(path)
-        if len(d):
-            return d
     return store.load_run(DB, name)
 
 

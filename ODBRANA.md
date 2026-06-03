@@ -176,16 +176,14 @@ Ovo **nisu isti eksperiment** i ne smeju se predstaviti kao jedan.
 
 ## N1 — Rad sa fajlovima (2 boda)
 
-**Fajlovi:** `N2/checkpoint.py`, `N1/common.py`, CSV pisanje u `N1/server.py`
+**Fajlovi:** `N2/checkpoint.py`, `N1/common.py`
 
-### Tri vrste rada sa fajlovima u projektu
+### Dve vrste rada sa fajlovima u projektu
 
 1. **Keširanje skupa podataka** — `common.py` preuzme MNIST jednom sa OpenML-a i
    snimi ga kao `mnist.npz`. Fiksni `DATA_SEED` znači da je permutacija uvek ista,
    pa je podela na train/test reproducibilna.
-2. **CSV log** — jedan red po rundi, `f.flush()` posle svakog reda da bi se run
-   mogao pratiti uživo i da se ništa ne izgubi ako proces padne.
-3. **Checkpoint težina** — najzanimljiviji deo, objašnjen ispod.
+2. **Checkpoint težina** — najzanimljiviji deo, objašnjen ispod.
 
 ### Zašto checkpoint uopšte postoji
 
@@ -349,10 +347,14 @@ read-only (`file:{path}?mode=ro`).
 
 `synchronous=NORMAL` je kompromis: brže od `FULL`, a i dalje bezbedno u WAL režimu.
 
-### CSV nije uklonjen
+### CSV je uklonjen
 
-Namerno stoji pored baze — postojeće figure ga čitaju, a običan tekstualni artefakt
-je lakše priložiti uz rad.
+Ranije je server pisao i CSV i bazu, sa istim redovima na oba mesta. To je značilo
+dva izvora istine koji mogu da se raziđu: CSV se prepisuje pri svakom pokretanju, a
+baza dodaje novi red za svaki run. `plot.py` je pritom davao prednost CSV-u, pa je
+run koji padne na pola mogao tiho da nacrta **stari** CSV, dok tačni podaci stoje u
+bazi. Sada sve piše samo u bazu, a `plot.py` čita `load_run`, koji uzima poslednji
+run sa datom labelom.
 
 ---
 
@@ -486,7 +488,7 @@ nepostojećeg. Zato: temp fajl u istom direktorijumu → `fsync` → `os.replace
 Jer je transformacija kompozicija funkcija — mora se odmotati suprotnim
 redosledom od motanja. Inače se zlib-u prosledi pickle.
 
-**Zašto SQLite ako već pišeš CSV?**
+**Zašto SQLite, a ne CSV?**
 Poređenje run-ova je join; konfiguracija i metrike po rundi su različitog oblika;
 diskretni događaji nemaju kolonu u tabeli po rundi.
 

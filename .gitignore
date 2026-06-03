@@ -14,5 +14,8 @@ mnist.npz
 figures/
 checkpoints/
 
+# smoke test radi na igrackom skupu, njegova baza nije rezultat
+results/smoke/
+
 # PyCharm
 .idea/

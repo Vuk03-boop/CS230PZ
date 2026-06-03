@@ -83,7 +83,7 @@ run() {
 
   echo "=== $label ==="
   "$PY" N1/server.py --workers "$n" --port "$PORT" --db "$DB" --label "$label" \
-        --epochs "$EPOCHS" --out "results/$label.csv" "${sflags[@]}" &
+        --epochs "$EPOCHS" "${sflags[@]}" &
   local srv=$!
   wait_for_port
   "$PY" N1/worker.py --id 1 --port "$PORT" --compute-delay "$DELAY" \
@@ -105,7 +105,7 @@ run() {
 
 echo "=== baseline_b128 ==="
 "$PY" DOC/baseline.py --batch-size 128 --epochs "$EPOCHS" --compute-delay "$DELAY" \
-       --out results/baseline_b128.csv
+       --db "$DB" --label baseline_b128
 
 run sync_n1  1 --mode sync
 run sync_n2  2 --mode sync
@@ -120,7 +120,7 @@ run zlib_n4     4 --mode sync --zlib 6 -- --compress --zlib 6
 
 echo "=== static_n4 (straggler, no balancing) ==="
 "$PY" N1/server.py --workers 4 --mode sync --port "$PORT" --db "$DB" \
-       --label static_n4 --out results/static_n4.csv --balance static \
+       --label static_n4 --balance static \
        --batch-size 32 --epochs "$EPOCHS" &
 srv=$!; wait_for_port
 "$PY" N1/worker.py --id 1 --port "$PORT" --delay-per-sample "$SLOW" &
@@ -131,7 +131,7 @@ wait $srv || true; wait 2>/dev/null || true; sleep 1
 
 echo "=== balanced_n4 (same straggler, dynamic balancing) ==="
 "$PY" N1/server.py --workers 4 --mode sync --port "$PORT" --db "$DB" \
-       --label balanced_n4 --out results/balanced_n4.csv \
+       --label balanced_n4 \
        --balance dynamic --batch-size 32 --epochs "$EPOCHS" &
 srv=$!; wait_for_port
 "$PY" N1/worker.py --id 1 --port "$PORT" --delay-per-sample "$SLOW" &
@@ -145,7 +145,7 @@ wait $srv || true; wait 2>/dev/null || true; sleep 1
 # poruka "resumed from ... at round N" u ispisu, pa je treba citirati u radu.
 echo "=== checkpoint_n2: server dies and resumes ==="
 "$PY" N1/server.py --workers 2 --mode sync --port "$PORT" --db "$DB" \
-       --label checkpoint_a --out results/checkpoint_a.csv --epochs 3 \
+       --label checkpoint_a --epochs 3 \
        --checkpoint checkpoints/w.npz --checkpoint-every 10 &
 srv=$!; wait_for_port
 for i in 1 2; do
@@ -157,7 +157,7 @@ kill -9 $srv 2>/dev/null || true
 wait 2>/dev/null || true
 sleep 1
 "$PY" N1/server.py --workers 2 --mode sync --port "$PORT" --db "$DB" \
-       --label checkpoint_b --out results/checkpoint_b.csv --epochs 3 \
+       --label checkpoint_b --epochs 3 \
        --checkpoint checkpoints/w.npz --checkpoint-every 10 --resume &
 srv=$!; wait_for_port
 for i in 1 2; do

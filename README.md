@@ -40,7 +40,7 @@ Or one configuration by hand:
 ```bash
 export PYTHONPATH=.
 python N1/server.py --workers 4 --mode sync --balance dynamic \
-       --epochs 10 --out results/run.csv &
+       --epochs 10 --label my_run &
 for i in 1 2 3 4; do python N1/worker.py --id $i --delay-per-sample 0.0001 & done
 ```
 
@@ -79,7 +79,8 @@ run with its full configuration), `rounds` (per-round metrics), `events`
 (registrations and evictions with reasons), `worker_rounds` (which worker
 computed how many samples in how long). Only the server writes, so there is one
 writer and no locking problem; WAL is on so `DOC/plot.py` can read during a run.
-The CSV output is kept alongside it.
+This is the only place metrics are written — there is no parallel CSV to drift
+out of sync with it.
 
 **N2 — load balancer (2).** `N2/balancer.py`, enabled with `--balance dynamic`.
 The server keeps an EWMA of each worker's seconds-per-sample and splits a

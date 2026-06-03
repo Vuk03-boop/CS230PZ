@@ -89,7 +89,8 @@ class Store:
         self.run_id = cur.lastrowid
         self.db.commit()
 
-    # Upisuje metrike jedne runde, ista polja koja idu i u CSV.
+    # Upisuje metrike jedne runde. Transakcija se ne potvrdjuje odmah, nego
+    # periodicno preko flush(), da svaka runda ne bi placala upis na disk.
     def round_row(self, row):
         if not self.enabled:
             return

@@ -1,11 +1,8 @@
 import argparse
-import csv
-import os
 import select
 import socket
 import time
 
-import pandas as pd
 import numpy as np
 
 from N2 import balancer, store, interceptors, checkpoint
@@ -18,7 +15,6 @@ p.add_argument("--lr", type=float, default=0.05)
 p.add_argument("--timeout", type=float, default=8.0, help="failure-detector timeout (s)")
 p.add_argument("--eval-every", type=int, default=5)
 p.add_argument("--port", type=int, default=5555)
-p.add_argument("--out", default="results/run.csv")
 p.add_argument("--startup-limit", type=float, default=180.0,
                help="give up if the cluster never forms")
 p.add_argument("--balance", choices=["static", "dynamic"], default="static",
@@ -43,7 +39,7 @@ p.add_argument("--resume", action="store_true", help="start from --checkpoint")
 args = p.parse_args()
 
 SYNC = args.mode == "sync"
-LABEL = args.label or os.path.splitext(os.path.basename(args.out))[0]
+LABEL = args.label or "run"
 
 CHAIN = interceptors.build(zlib_level=args.zlib, latency=args.latency)
 
@@ -71,19 +67,12 @@ lsock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 lsock.bind(("", args.port))
 lsock.listen(args.workers + 4)
 
-os.makedirs(os.path.dirname(args.out) or ".", exist_ok=True)
-f = open(args.out, "w", newline="")
-log = csv.writer(f)
-log.writerow(["round", "samples", "train_loss", "test_loss", "test_acc",
-              "wall_clock", "active_workers", "bytes_in", "mean_staleness",
-              "round_seconds", "barrier_wait"])
-
 DB = store.Store(args.db or None, label=LABEL, config={
     "mode": args.mode, "workers": args.workers, "lr": args.lr,
     "balance": args.balance, "dataset": common.DATASET,
     "timeout": args.timeout, "batch_size": args.batch_size,
     "epochs": args.epochs, "zlib": args.zlib, "latency": args.latency,
-    "out": args.out, "interceptors": repr(CHAIN)})
+    "interceptors": repr(CHAIN)})
 
 conns = {}
 socks = {}
@@ -107,7 +96,7 @@ print(f"[*] server up | mode={args.mode} workers={args.workers} "
       f"dataset={common.DATASET} | {CHAIN}")
 
 
-# Upisuje metrike jedne runde u CSV i bazu i po potrebi pravi checkpoint.
+# Upisuje metrike jedne runde u bazu i po potrebi pravi checkpoint.
 def write_row(train_loss, staleness, n_samples, barrier_wait=0.0):
     global rnd, samples_total, t_last_round, last_eval
     rnd += 1
@@ -120,8 +109,6 @@ def write_row(train_loss, staleness, n_samples, barrier_wait=0.0):
            round(now - t0, 4), len(active), bytes_total,
            round(staleness, 3), round(now - t_last_round, 5),
            round(barrier_wait, 5)]
-    log.writerow(row)
-    f.flush()
     DB.round_row(row)
     t_last_round = now
     if args.checkpoint and args.checkpoint_every and \
@@ -307,5 +294,4 @@ print(f"[*] done: {rnd} rounds, {samples_total} samples, "
 print(f"[*] throughput: {BAL.summary()} | imbalance {BAL.imbalance():.2f}x")
 for name, s in report.items():
     print(f"[*] interceptor {name}: {s}")
-f.close()
 lsock.close()
