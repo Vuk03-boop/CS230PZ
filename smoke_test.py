@@ -4,12 +4,12 @@ import sys
 import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-ENV = dict(os.environ, DATASET="synthetic", PYTHONPATH=HERE)
+ENV = dict(os.environ, PYTHONPATH=HERE)
 PY = sys.executable
 
-# Smoke test pise u svoju bazu, odvojenu od results/runs.sqlite. Inace bi se
-# runovi na igrackom skupu mesali sa pravim rezultatima, a plot.py uzima
-# poslednji run sa datom labelom.
+# Smoke test pise u svoju bazu, odvojenu od results/runs.sqlite. Njegovi runovi
+# traju jednu epohu i sluze samo da se vidi da svaki rezim prolazi od kraja do
+# kraja, pa nemaju sta da traze medju merenjima iz kojih se crtaju figure.
 SMOKE_DB = os.path.join(HERE, "results", "smoke", "smoke.sqlite")
 os.makedirs(os.path.dirname(SMOKE_DB), exist_ok=True)
 

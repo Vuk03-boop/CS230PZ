@@ -9,7 +9,7 @@ balancing, a middleware interceptor chain and a SQLite metrics store.
 
 | file | role |
 |---|---|
-| `N1/common.py` | data set (MNIST, or `DATASET=synthetic`), model, gradients |
+| `N1/common.py` | MNIST loading and caching, model, gradients |
 | `N1/net.py` | length-prefixed framing over TCP; runs messages through the interceptor chain |
 | `N2/interceptors.py` | middleware: float32 gradients, deflate, metrics, injected latency |
 | `N1/server.py` | parameter server: barrier, failure detection, work allocation, logging |
@@ -20,7 +20,7 @@ balancing, a middleware interceptor chain and a SQLite metrics store.
 | `DOC/baseline.py` | sequential reference run, no network |
 | `DOC/plot.py` | every figure |
 | `DOC/run_experiments.sh` | every run behind every figure |
-| `smoke_test.py` | fast end-to-end check of all modes (`DATASET=synthetic`) |
+| `smoke_test.py` | end-to-end check of all modes, one epoch each (~1 min) |
 
 ## Running
 
@@ -102,32 +102,35 @@ change the objective being optimised. This is also why "N synchronous workers
 with batch B behave like one node with batch N·B" still holds with balancing
 switched on.
 
-## Measured results (synthetic task, 3 workers, one straggler at 4× per-sample cost)
+## Measured results (MNIST, 4 workers, one straggler at 4× per-sample cost)
 
 | | static split | dynamic balancing |
 |---|---|---|
-| samples per worker per round | 32 / 32 / 32 | 12 / 45 / 39 |
-| seconds per worker per round | 0.0140 / 0.0049 / 0.0050 | 0.0067 / 0.0064 / 0.0065 |
-| mean barrier wait | 0.0101 s | 0.0010 s |
-| mean round duration | 0.0171 s | 0.0098 s |
+| samples per worker per round | 32 / 32 / 32 / 32 | 10 / 39 / 40 / 38 |
+| seconds per worker per round | 0.0143 / 0.0047 / 0.0048 / 0.0046 | 0.0055 / 0.0055 / 0.0055 / 0.0055 |
+| mean barrier wait | 0.0100 s | 0.0007 s |
+| mean round duration | 0.0158 s | 0.0073 s |
 
-Compression, same task, 2 workers, one epoch:
+The balancer converges on shares that make every worker take the same 5.5 ms,
+which is the whole point: the barrier releases as soon as the last worker
+arrives, so equal *times* matter and equal *batches* do not. Barrier wait drops
+14× and the round nearly halves.
+
+Compression, 4 workers, same sample budget (783 rounds):
 
 | | bytes received by server | wall clock |
 |---|---|---|
-| none | 19.80 MB | 0.6 s |
-| float32 gradients | 9.95 MB | 0.6 s |
-| float32 + deflate level 6 | 9.24 MB | 3.1 s |
+| none | 197.49 MB | 5.6 s |
+| float32 gradients | 99.26 MB | 6.6 s |
+| float32 + deflate level 6 | 54.67 MB | 11.3 s |
 
-Deflate on top of float32 bought about 7% more and cost 1.75 s of CPU on a run
-that otherwise takes 0.6 s. On loopback the compression interceptor is a clear
-loss; it would only pay off once the link is slow enough that 10 MB takes
-longer than 1.75 s to send, i.e. below roughly 50 Mbit/s. Report it as a
-negative result rather than leaving it out — measuring it is the point.
-
-These numbers are from `DATASET=synthetic`, so the accuracies they come with
-are meaningless and must not be presented as MNIST. Re-run on MNIST for the
-figures that appear in the paper.
+Narrowing to float32 halves the traffic for about 1 s of CPU — it pays for
+itself on any link slower than ~800 Mbit/s, so in practice always. Deflate on
+top removes another 45% but costs 4.7 s, which only pays off below roughly
+76 Mbit/s. On loopback both are a net loss in wall-clock terms; report that as
+a negative result rather than hiding it, because measuring the trade-off is
+the point. Note this is far better than deflate does on random data — real
+gradients are highly compressible, and a synthetic task would understate it.
 
 ## Reproducing an earlier result
 

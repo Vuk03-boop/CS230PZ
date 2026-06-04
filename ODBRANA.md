@@ -455,8 +455,8 @@ tehnike i vredi je pomenuti u radu.
   ništa o soketima; `balancer.py` ne zna ništa o mreži. Svaki se može testirati sam.
 - **Sve nadogradnje su opcione.** Podrazumevane zastavice reprodukuju originalno
   ponašanje bajt po bajt, pa stariji rezultati i dalje važe.
-- **`smoke_test.py`** pokreće svaki režim od kraja do kraja sa `DATASET=synthetic`.
-  Za demonstraciju uživo: `python smoke_test.py sync`.
+- **`smoke_test.py`** pokreće svaki režim od kraja do kraja, po jednu epohu, za
+  oko minut. Za demonstraciju uživo: `python smoke_test.py sync`.
 
 ---
 

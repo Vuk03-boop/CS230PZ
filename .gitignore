@@ -14,7 +14,7 @@ mnist.npz
 figures/
 checkpoints/
 
-# smoke test radi na igrackom skupu, njegova baza nije rezultat
+# smoke test samo proverava da svaki rezim prolazi, njegova baza nije rezultat
 results/smoke/
 
 # SQLite u WAL rezimu drzi jos dva fajla pored baze. Oni su privremeni: sadrzaj

@@ -8,12 +8,10 @@ N_CLASSES = 10
 N_TRAIN = 10000
 N_TEST = 2000
 
-DATASET = os.environ.get("DATASET", "mnist").lower()
+DATASET = "mnist"
 _CACHE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "../mnist.npz")
 
-TRUE_W_SEED = 1234
 DATA_SEED = 7
-TEST_SEED = 99
 
 _cached = {}
 
@@ -37,7 +35,12 @@ def _mnist():
         if not os.path.exists(_CACHE):
             _download_mnist()
         d = np.load(_CACHE)
-        _cached["mnist"] = (d["X"].astype(np.float64), d["y"])
+        # Isecanje ide pre pretvaranja u float64. Od 70000 uzoraka koriste se
+        # samo prvih N_TRAIN + N_TEST, a cela matrica u float64 zauzima 439 MB
+        # po procesu; ovako je 75 MB, sto puta pet procesa u klasteru cini
+        # razliku od skoro dva gigabajta.
+        n = N_TRAIN + N_TEST
+        _cached["mnist"] = (d["X"][:n].astype(np.float64), d["y"][:n])
     return _cached["mnist"]
 
 
@@ -48,31 +51,14 @@ def _onehot(y):
     return Y
 
 
-# Vraca fiksnu matricu kojom se generisu oznake sintetickog zadatka.
-def _true_w():
-    return np.random.default_rng(TRUE_W_SEED).standard_normal((N_FEATURES, N_CLASSES))
-
-
-# Generise sinteticki skup od n uzoraka za dato seme.
-def _make(n, seed):
-    rng = np.random.default_rng(seed)
-    X = rng.standard_normal((n, N_FEATURES))
-    y = np.argmax(X @ _true_w(), axis=1)
-    return X, _onehot(y)
-
-
 # Vraca skup za treniranje: ulaze i one-hot oznake.
 def load_train():
-    if DATASET == "synthetic":
-        return _make(N_TRAIN, DATA_SEED)
     X, y = _mnist()
     return X[:N_TRAIN], _onehot(y[:N_TRAIN])
 
 
 # Vraca test skup: ulaze i one-hot oznake.
 def load_test():
-    if DATASET == "synthetic":
-        return _make(N_TEST, TEST_SEED)
     X, y = _mnist()
     return X[N_TRAIN:N_TRAIN + N_TEST], _onehot(y[N_TRAIN:N_TRAIN + N_TEST])
 
