@@ -17,5 +17,11 @@ checkpoints/
 # smoke test radi na igrackom skupu, njegova baza nije rezultat
 results/smoke/
 
+# SQLite u WAL rezimu drzi jos dva fajla pored baze. Oni su privremeni: sadrzaj
+# im se prelije u .sqlite kad se poslednja veza zatvori, pa nemaju sta da traze
+# u istoriji.
+*.sqlite-wal
+*.sqlite-shm
+
 # PyCharm
 .idea/
