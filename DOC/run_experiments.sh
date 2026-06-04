@@ -144,26 +144,43 @@ wait $srv || true; wait 2>/dev/null || true; sleep 1
 # "Rad sa fajlovima": server se ubija i ponovo pokrece sa --resume. Dokaz je
 # poruka "resumed from ... at round N" u ispisu, pa je treba citirati u radu.
 echo "=== checkpoint_n2: server dies and resumes ==="
+rm -f checkpoints/w.npz
 "$PY" N1/server.py --workers 2 --mode sync --port "$PORT" --db "$DB" \
-       --label checkpoint_a --epochs 3 \
+       --label checkpoint_a --epochs "$EPOCHS" \
        --checkpoint checkpoints/w.npz --checkpoint-every 10 &
 srv=$!; wait_for_port
 for i in 1 2; do
   "$PY" N1/worker.py --id "$i" --port "$PORT" --compute-delay "$DELAY" &
 done
-sleep 6
+
+# Ceka da nastane prvi checkpoint pa tek onda ubija server. Fiksni sleep je
+# ovde nepouzdan: radnici prvo ucitavaju MNIST, pa se ne zna unapred kada
+# obuka stvarno krene. Ako se ubije prerano, nema sta da se resumuje.
+for _ in $(seq 1 200); do
+  [[ -f checkpoints/w.npz ]] && break
+  sleep 0.3
+done
+if [[ ! -f checkpoints/w.npz ]]; then
+  echo "checkpoint never appeared" >&2; kill -9 $srv 2>/dev/null || true; exit 1
+fi
 echo "[!] killing the server"
 kill -9 $srv 2>/dev/null || true
+sleep 1
+kill $(jobs -pr) 2>/dev/null || true
 wait 2>/dev/null || true
 sleep 1
+
 "$PY" N1/server.py --workers 2 --mode sync --port "$PORT" --db "$DB" \
-       --label checkpoint_b --epochs 3 \
+       --label checkpoint_b --epochs "$EPOCHS" \
        --checkpoint checkpoints/w.npz --checkpoint-every 10 --resume &
 srv=$!; wait_for_port
 for i in 1 2; do
   "$PY" N1/worker.py --id "$i" --port "$PORT" --compute-delay "$DELAY" &
 done
-wait $srv || true; wait 2>/dev/null || true
+wait $srv || true
+sleep 1
+kill $(jobs -pr) 2>/dev/null || true
+wait 2>/dev/null || true
 
 echo
 echo "all runs complete -> $DB"
