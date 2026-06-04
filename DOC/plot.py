@@ -40,16 +40,20 @@ if base is not None and s4 is not None:
 runs = {n: load(f"sync_n{n}") for n in (1, 2, 4)}
 runs = {n: d for n, d in runs.items() if d is not None}
 if runs:
+    # Prag se bira blizu tacnosti koju runovi stvarno dostignu. Raniji prag od
+    # 0.9*min(finals) ispada oko 0.80, a to softmax pogodi u prvoj desetinki
+    # sekunde, pa se merilo vreme pokretanja umesto obuke.
     finals = [d["test_acc"].dropna().iloc[-1] for d in runs.values()]
-    TARGET = round(0.9 * min(finals), 3)
+    TARGET = round(0.98 * min(finals), 3)
 
     fig, (a1, a2) = plt.subplots(1, 2, figsize=(11, 4))
-    times = {}
+    times, thru = {}, {}
     for n, d in sorted(runs.items()):
         a1.plot(d["wall_clock"], d["test_acc"], label=f"{n} worker(s)")
         hit = d[d["test_acc"] >= TARGET]
         if len(hit):
             times[n] = hit["wall_clock"].iloc[0]
+        thru[n] = d["samples"].iloc[-1] / d["wall_clock"].iloc[-1]
     a1.axhline(TARGET, color="k", ls=":", alpha=.5)
     a1.set_xlabel("wall-clock time (s)")
     a1.set_ylabel("test accuracy")
@@ -57,20 +61,31 @@ if runs:
     a1.legend()
     a1.grid(alpha=.3)
 
-    if times:
-        ns = sorted(times)
-        t1 = times[ns[0]]
-        speedup = [t1 / times[n] for n in ns]
-        a2.plot(ns, speedup, "o-", label="measured")
+    # Dve krive, jer mere dve razlicite stvari i ne poklapaju se. Propusnost
+    # raste skoro linearno: to je ono sto paralelizacija zaista donosi. Vreme do
+    # zadate tacnosti stoji ravno, jer N radnika daje N puta veci globalni batch
+    # pri istom koraku ucenja, pa svaki korak nosi srazmerno manje napretka.
+    # Crtati samo prvu krivu znacilo bi precutati cenu, a samo drugu bi ostavilo
+    # utisak da paralelizacija ne radi.
+    ns = sorted(thru)
+    if ns:
         a2.plot(ns, ns, "k--", alpha=.5, label="ideal (linear)")
-        for n, s in zip(ns, speedup):
-            a2.annotate(f"{s:.2f}x", (n, s), textcoords="offset points", xytext=(6, -10))
+        s_thru = [thru[n] / thru[ns[0]] for n in ns]
+        a2.plot(ns, s_thru, "o-", label="throughput (samples/s)")
+        for n, s in zip(ns, s_thru):
+            a2.annotate(f"{s:.2f}x", (n, s), textcoords="offset points", xytext=(6, 4))
+        if len(times) == len(ns):
+            s_acc = [times[ns[0]] / times[n] for n in ns]
+            a2.plot(ns, s_acc, "s-", label=f"time to acc {TARGET}")
+            for n, s in zip(ns, s_acc):
+                a2.annotate(f"{s:.2f}x", (n, s), textcoords="offset points", xytext=(6, -12))
+            print("time-to-accuracy speedup:", {n: round(s, 2) for n, s in zip(ns, s_acc)})
         a2.set_xlabel("number of workers")
-        a2.set_ylabel(f"speedup to reach acc {TARGET}")
-        a2.set_title("Speedup vs ideal")
+        a2.set_ylabel("speedup over 1 worker")
+        a2.set_title("Two kinds of speedup")
         a2.legend()
         a2.grid(alpha=.3)
-        print("speedup:", {n: round(t1 / times[n], 2) for n in ns})
+        print("throughput speedup:", {n: round(s, 2) for n, s in zip(ns, s_thru)})
     save(fig, "fig2_speedup")
 
 sy, asy = load("sync_n4"), load("async_n4")
