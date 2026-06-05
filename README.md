@@ -1,42 +1,42 @@
 # Distribuirani okvir za mašinsko učenje (CS230, tema 20)
 
-Parameter server + N workers, raw TCP sockets and `select()`, no ZeroMQ and no
-ML framework. Softmax regression on MNIST, trained synchronously or
-asynchronously across processes, with failure injection, server-side load
-balancing, a middleware interceptor chain and a SQLite metrics store.
+Parameter server + N radnika, goli TCP soketi i `select()`, bez ZeroMQ-a i bez
+ML biblioteke. Softmax regresija nad MNIST-om, obučavana sinhrono ili
+asinhrono preko više procesa, sa injekcijom otkaza, balansiranjem opterećenja
+na strani servera, middleware lancem interceptora i SQLite skladištem metrika.
 
-## Files
+## Fajlovi
 
-| file | role |
+| fajl | uloga |
 |---|---|
-| `N1/common.py` | MNIST loading and caching, model, gradients |
-| `N1/net.py` | length-prefixed framing over TCP; runs messages through the interceptor chain |
-| `N2/interceptors.py` | middleware: float32 gradients, deflate, metrics, injected latency |
-| `N1/server.py` | parameter server: barrier, failure detection, work allocation, logging |
-| `N1/worker.py` | worker node: local gradients, failure injection, server-driven schedule |
-| `N2/balancer.py` | throughput estimation and batch-size allocation |
-| `N2/checkpoint.py` | atomic weight checkpoints so the server itself is recoverable |
-| `N2/store.py` | SQLite schema and read helpers |
-| `DOC/baseline.py` | sequential reference run, no network |
-| `DOC/plot.py` | every figure |
-| `DOC/run_experiments.sh` | every run behind every figure |
-| `smoke_test.py` | end-to-end check of all modes, one epoch each (~1 min) |
-| `BAZA.md` | data dictionary: every table and column in `results/runs.sqlite` |
+| `N1/common.py` | učitavanje i keširanje MNIST-a, model, gradijenti |
+| `N1/net.py` | framing sa prefiksom dužine preko TCP-a; propušta poruke kroz lanac interceptora |
+| `N2/interceptors.py` | middleware: float32 gradijenti, deflate, metrike, veštačko kašnjenje |
+| `N1/server.py` | parameter server: barijera, detekcija otkaza, dodela posla, logovanje |
+| `N1/worker.py` | radni čvor: lokalni gradijenti, injekcija otkaza, raspored koji vodi server |
+| `N2/balancer.py` | procena propusnosti i dodela veličine batch-a |
+| `N2/checkpoint.py` | atomski checkpoint težina, tako da je i sam server oporavljiv |
+| `N2/store.py` | SQLite šema i pomoćne funkcije za čitanje |
+| `DOC/baseline.py` | sekvencijalni referentni run, bez mreže |
+| `DOC/plot.py` | sve figure |
+| `DOC/run_experiments.sh` | svi run-ovi iza svih figura |
+| `smoke_test.py` | provera svih režima od kraja do kraja, po jedna epoha (~1 min) |
+| `BAZA.md` | rečnik podataka: svaka tabela i kolona u `results/runs.sqlite` |
 
-## Running
+## Pokretanje
 
-Run everything from the project root and put the root on `PYTHONPATH`, so that
-`N1` and `N2` are importable. `run_experiments.sh` does this for you; if you
-launch a process by hand you have to do it yourself:
+Sve se pokreće iz korena projekta, uz koren na `PYTHONPATH`-u, da bi `N1` i `N2`
+bili uvozivi. `run_experiments.sh` to radi umesto tebe; ako proces pokrećeš
+ručno, moraš sam:
 
 ```bash
-export PYTHONPATH=.                                      # or use: python -m N1.server
-python -c "from N1 import common; common.load_train()"   # fetch MNIST once, before anything parallel
+export PYTHONPATH=.                                      # ili koristi: python -m N1.server
+python -c "from N1 import common; common.load_train()"   # preuzmi MNIST jednom, pre svega paralelnog
 bash DOC/run_experiments.sh
 python DOC/plot.py
 ```
 
-Or one configuration by hand:
+Ili jedna konfiguracija ručno:
 
 ```bash
 export PYTHONPATH=.
@@ -45,99 +45,99 @@ python N1/server.py --workers 4 --mode sync --balance dynamic \
 for i in 1 2 3 4; do python N1/worker.py --id $i --delay-per-sample 0.0001 & done
 ```
 
-Without `PYTHONPATH`, `python N1/server.py` fails with
-`ModuleNotFoundError: No module named 'N2'`, because Python puts the *script's*
-directory on `sys.path`, not the directory you ran it from.
+Bez `PYTHONPATH`-a, `python N1/server.py` puca sa
+`ModuleNotFoundError: No module named 'N2'`, jer Python na `sys.path` stavlja
+direktorijum *skripte*, a ne direktorijum iz kog si je pokrenuo.
 
-Fast end-to-end check of every mode, no MNIST download needed:
+Brza provera svih režima od kraja do kraja, bez preuzimanja MNIST-a:
 
 ```bash
-python smoke_test.py          # all seven scenarios
-python smoke_test.py sync     # just one
+python smoke_test.py          # svih sedam scenarija
+python smoke_test.py sync     # samo jedan
 ```
 
-## How the pieces map onto the grading sheet
+## Kako se delovi preslikavaju na tabelu za ocenjivanje
 
-**N1 — klijent-server (3).** `N1/server.py` + `N1/worker.py`. One listening socket,
-`select()` over all connections, explicit message framing in `N1/net.py` because
-TCP is a byte stream and `recv(n)` may return fewer than `n` bytes.
+**N1 — klijent-server (3).** `N1/server.py` + `N1/worker.py`. Jedan soket koji
+sluša, `select()` nad svim vezama, eksplicitan framing poruka u `N1/net.py` jer
+je TCP tok bajtova i `recv(n)` sme da vrati manje od `n` bajtova.
 
-**N1 — rad sa fajlovima (2).** `N2/checkpoint.py` writes `W` to disk every K
-rounds and `--resume` restores it. The write is
-temp-file → `fsync` → `os.replace`, which is atomic within a filesystem, so a
-crash mid-write cannot leave a half-readable checkpoint. This closes the hole in
-the original design: workers were survivable, the server was not.
+**N1 — rad sa fajlovima (2).** `N2/checkpoint.py` upisuje `W` na disk na svakih
+K rundi, a `--resume` ga vraća. Upis ide
+temp fajl → `fsync` → `os.replace`, što je atomsko unutar fajl sistema, pa pad
+usred pisanja ne može da ostavi napola čitljiv checkpoint. Time se zatvara rupa
+u originalnom dizajnu: radnici su bili preživljivi, server nije.
 
-**N2 — middleware / interceptori (3).** `N2/interceptors.py`. A chain runs
-front-to-back on send and back-to-front on receive, at two levels: object level
-(before pickling) and byte level (after). Gradient narrowing to float32 is
-object level and one-sided; deflate is byte level and both peers must agree.
-Byte accounting and injected WAN latency are interceptors too, which is why
-neither the training loop nor the socket code mentions them.
+**N2 — middleware / interceptori (3).** `N2/interceptors.py`. Lanac se izvršava
+napred-nazad pri slanju i nazad-napred pri prijemu, na dva nivoa: objektni nivo
+(pre pickle-a) i bajtni nivo (posle). Sužavanje gradijenata na float32 je
+objektni nivo i jednostrano je; deflate je bajtni nivo i obe strane moraju da se
+slože. Brojanje bajtova i veštačko WAN kašnjenje su takođe interceptori, i zato
+ih ne pominju ni petlja za obuku ni kod za soket.
 
-**N2 — rad sa bazom (3).** `N2/store.py`, SQLite, four tables: `runs` (one row per
-run with its full configuration), `rounds` (per-round metrics), `events`
-(registrations and evictions with reasons), `worker_rounds` (which worker
-computed how many samples in how long). Only the server writes, so there is one
-writer and no locking problem; WAL is on so `DOC/plot.py` can read during a run.
-This is the only place metrics are written — there is no parallel CSV to drift
-out of sync with it.
+**N2 — rad sa bazom (3).** `N2/store.py`, SQLite, četiri tabele: `runs` (jedan
+red po run-u sa punom konfiguracijom), `rounds` (metrike po rundi), `events`
+(registracije i izbacivanja sa razlozima), `worker_rounds` (koji radnik je
+obradio koliko uzoraka i za koje vreme). Piše samo server, pa postoji jedan
+pisac i nema problema sa zaključavanjem; WAL je uključen da bi `DOC/plot.py`
+mogao da čita dok run traje. Ovo je jedino mesto gde se metrike upisuju — nema
+paralelnog CSV-a koji bi se razišao sa bazom.
 
-**N2 — load balancer (2).** `N2/balancer.py`, enabled with `--balance dynamic`.
-The server keeps an EWMA of each worker's seconds-per-sample and splits a
-constant global batch in proportion to measured rate, so a slow node gets a
-smaller batch instead of holding up the barrier.
+**N2 — load balancer (2).** `N2/balancer.py`, uključuje se sa `--balance
+dynamic`. Server drži EWMA sekundi po uzorku za svakog radnika i deli konstantan
+globalni batch srazmerno izmerenoj brzini, pa spor čvor dobija manji batch
+umesto da zadržava barijeru.
 
-## The one correctness detail worth being ready to defend
+## Jedan detalj ispravnosti koji vredi spremiti za odbranu
 
-Each worker returns a gradient that is a **mean over its own batch**. Averaging
-those means with equal weight is only correct when the batches are equal in
-size. Under dynamic balancing they are not, so `resolve_barrier()` uses the
-weighted combination
+Svaki radnik vraća gradijent koji je **srednja vrednost nad njegovim batch-om**.
+Prosečiti te srednje vrednosti sa jednakom težinom je ispravno samo kad su
+batch-evi jednake veličine. Uz dinamičko balansiranje nisu, pa
+`resolve_barrier()` koristi težinsku kombinaciju
 
     sum(n_i * g_i) / sum(n_i)
 
-which telescopes back to the mean over the union of the batches. Plain
-`np.mean` would over-weight the slow workers' smaller batches and quietly
-change the objective being optimised. This is also why "N synchronous workers
-with batch B behave like one node with batch N·B" still holds with balancing
-switched on.
+koja se teleskopski svodi na srednju vrednost nad unijom batch-eva. Običan
+`np.mean` bi precenio manje batch-eve sporih radnika i tiho promenio funkciju
+cilja koja se optimizuje. Zato i tvrdnja „N sinhronih radnika sa batch-om B
+ponaša se kao jedan čvor sa batch-om N·B” i dalje važi kad je balansiranje
+uključeno.
 
-## Measured results (MNIST, 4 workers, one straggler at 4× per-sample cost)
+## Izmereni rezultati (MNIST, 4 radnika, jedan sporiji sa 4× cenom po uzorku)
 
-| | static split | dynamic balancing |
+| | statička podela | dinamičko balansiranje |
 |---|---|---|
-| samples per worker per round | 32 / 32 / 32 / 32 | 10 / 39 / 40 / 38 |
-| seconds per worker per round | 0.0142 / 0.0047 / 0.0046 / 0.0046 | 0.0052 / 0.0051 / 0.0052 / 0.0052 |
-| mean barrier wait | 0.0099 s | 0.0007 s |
-| mean round duration | 0.0157 s | 0.0068 s |
+| uzoraka po radniku po rundi | 32 / 32 / 32 / 32 | 10 / 39 / 40 / 38 |
+| sekundi po radniku po rundi | 0.0142 / 0.0047 / 0.0046 / 0.0046 | 0.0052 / 0.0051 / 0.0052 / 0.0052 |
+| prosečno čekanje na barijeri | 0.0099 s | 0.0007 s |
+| prosečno trajanje runde | 0.0157 s | 0.0068 s |
 
-The balancer converges on shares that make every worker take the same ~5.2 ms,
-which is the whole point: the barrier releases as soon as the last worker
-arrives, so equal *times* matter and equal *batches* do not. Barrier wait drops
-14× and the round duration more than halves.
+Balanser konvergira ka udelima kod kojih svakom radniku treba istih ~5.2 ms, a
+to je cela poenta: barijera se otpušta čim stigne poslednji radnik, pa su bitna
+jednaka *vremena*, a ne jednaki *batch-evi*. Čekanje na barijeri pada 14×, a
+trajanje runde više nego prepolovljeno.
 
-Compression, 4 workers, same sample budget (783 rounds):
+Kompresija, 4 radnika, isti budžet uzoraka (783 runde):
 
-| | bytes received by server | wall clock (2 runs) |
+| | bajtova primljenih na serveru | stvarno vreme (2 run-a) |
 |---|---|---|
-| none | 197.49 MB | 5.6 s / 5.5 s |
-| float32 gradients | 99.26 MB | 6.6 s / 5.3 s |
-| float32 + deflate level 6 | 54.67 MB | 11.3 s / 12.9 s |
+| ništa | 197.49 MB | 5.6 s / 5.5 s |
+| float32 gradijenti | 99.26 MB | 6.6 s / 5.3 s |
+| float32 + deflate nivo 6 | 54.67 MB | 11.3 s / 12.9 s |
 
-The byte counts are exact and reproduce bit for bit; the wall clocks do not, so
-two runs are shown rather than one. Narrowing to float32 halves the traffic at
-a CPU cost that is lost in the noise — it is worth switching on unconditionally.
-Deflate on top removes another 45%, but costs 6–7 s on a run that otherwise
-takes 5 s, so it only pays off once the link is slow enough that the 45 MB it
-saves take longer than that to transmit — roughly below 60 Mbit/s. On loopback
-it is a clear net loss; report that as a negative result rather than hiding it,
-because measuring the trade-off is the point. Note also that 45% is far more
-than deflate manages on random data: real gradients are highly compressible,
-and testing this on a synthetic task would have understated the interceptor.
+Brojevi bajtova su tačni i reprodukuju se bit po bit; stvarna vremena ne, pa su
+prikazana dva run-a umesto jednog. Sužavanje na float32 prepolovljava saobraćaj
+uz CPU cenu koja se gubi u šumu — vredi ga uključiti bezuslovno. Deflate povrh
+toga skida još 45%, ali košta 6–7 s na run-u koji inače traje 5 s, pa se isplati
+tek kad je veza dovoljno spora da tih 45 MB koje uštedi putuje duže od toga —
+otprilike ispod 60 Mbit/s. Na loopback-u je jasan neto gubitak; to treba
+prijaviti kao negativan rezultat, a ne kriti, jer je merenje kompromisa i bila
+poenta. Uz to, 45% je daleko više nego što deflate postiže nad slučajnim
+podacima: pravi gradijenti su vrlo kompresibilni, pa bi testiranje ovoga na
+sintetičkom zadatku potcenilo interceptor.
 
-## Reproducing an earlier result
+## Reprodukcija ranijeg rezultata
 
-Everything added is off by default: `--balance static`, no interceptors beyond
-byte counting, `--db` writes a new run row rather than touching old ones. A run
-with no new flags produces the same trajectory as the original code.
+Sve što je dodato je podrazumevano isključeno: `--balance static`, bez
+interceptora osim brojanja bajtova, `--db` upisuje novi red za run umesto da
+dira stare. Run bez novih zastavica daje istu putanju kao originalni kod.
