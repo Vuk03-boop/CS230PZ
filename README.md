@@ -21,6 +21,7 @@ balancing, a middleware interceptor chain and a SQLite metrics store.
 | `DOC/plot.py` | every figure |
 | `DOC/run_experiments.sh` | every run behind every figure |
 | `smoke_test.py` | end-to-end check of all modes, one epoch each (~1 min) |
+| `BAZA.md` | data dictionary: every table and column in `results/runs.sqlite` |
 
 ## Running
 

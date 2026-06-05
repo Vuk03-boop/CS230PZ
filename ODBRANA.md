@@ -331,6 +331,9 @@ Tri razloga, svi se pojave čim postoji više od jednog run-a:
 `worker_rounds` je tabela koja **omogućava grafik load balancinga** — u CSV-u
 nema mesta za podatak po radniku.
 
+Pun rečnik podataka — svaka kolona, jedinica, ko je upisuje i koje su zamke pri
+čitanju — je u **`BAZA.md`**.
+
 ### Konkurentnost
 
 **Piše samo server.** Radnici ne diraju bazu. Znači postoji tačno jedan pisac i
