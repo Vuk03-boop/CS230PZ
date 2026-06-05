@@ -107,30 +107,33 @@ switched on.
 | | static split | dynamic balancing |
 |---|---|---|
 | samples per worker per round | 32 / 32 / 32 / 32 | 10 / 39 / 40 / 38 |
-| seconds per worker per round | 0.0143 / 0.0047 / 0.0048 / 0.0046 | 0.0055 / 0.0055 / 0.0055 / 0.0055 |
-| mean barrier wait | 0.0100 s | 0.0007 s |
-| mean round duration | 0.0158 s | 0.0073 s |
+| seconds per worker per round | 0.0142 / 0.0047 / 0.0046 / 0.0046 | 0.0052 / 0.0051 / 0.0052 / 0.0052 |
+| mean barrier wait | 0.0099 s | 0.0007 s |
+| mean round duration | 0.0157 s | 0.0068 s |
 
-The balancer converges on shares that make every worker take the same 5.5 ms,
+The balancer converges on shares that make every worker take the same ~5.2 ms,
 which is the whole point: the barrier releases as soon as the last worker
 arrives, so equal *times* matter and equal *batches* do not. Barrier wait drops
-14× and the round nearly halves.
+14× and the round duration more than halves.
 
 Compression, 4 workers, same sample budget (783 rounds):
 
-| | bytes received by server | wall clock |
+| | bytes received by server | wall clock (2 runs) |
 |---|---|---|
-| none | 197.49 MB | 5.6 s |
-| float32 gradients | 99.26 MB | 6.6 s |
-| float32 + deflate level 6 | 54.67 MB | 11.3 s |
+| none | 197.49 MB | 5.6 s / 5.5 s |
+| float32 gradients | 99.26 MB | 6.6 s / 5.3 s |
+| float32 + deflate level 6 | 54.67 MB | 11.3 s / 12.9 s |
 
-Narrowing to float32 halves the traffic for about 1 s of CPU — it pays for
-itself on any link slower than ~800 Mbit/s, so in practice always. Deflate on
-top removes another 45% but costs 4.7 s, which only pays off below roughly
-76 Mbit/s. On loopback both are a net loss in wall-clock terms; report that as
-a negative result rather than hiding it, because measuring the trade-off is
-the point. Note this is far better than deflate does on random data — real
-gradients are highly compressible, and a synthetic task would understate it.
+The byte counts are exact and reproduce bit for bit; the wall clocks do not, so
+two runs are shown rather than one. Narrowing to float32 halves the traffic at
+a CPU cost that is lost in the noise — it is worth switching on unconditionally.
+Deflate on top removes another 45%, but costs 6–7 s on a run that otherwise
+takes 5 s, so it only pays off once the link is slow enough that the 45 MB it
+saves take longer than that to transmit — roughly below 60 Mbit/s. On loopback
+it is a clear net loss; report that as a negative result rather than hiding it,
+because measuring the trade-off is the point. Note also that 45% is far more
+than deflate manages on random data: real gradients are highly compressible,
+and testing this on a synthetic task would have understated the interceptor.
 
 ## Reproducing an earlier result
 
