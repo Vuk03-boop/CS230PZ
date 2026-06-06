@@ -1,19 +1,19 @@
-# Šta se nalazi u bazi
+# Database reference
 
-Sve što merenja beleže završi u jednom fajlu: `results/runs.sqlite`. Nema CSV-a
-pored njega, nema drugog izvora istine. Ovaj dokument je rečnik podataka — šta
-koja kolona znači, u kojoj je jedinici i ko je upisuje.
+File: `results/runs.sqlite`. SQLite 3, WAL journal mode.
+Schema: `N2/store.py`, constant `SCHEMA`.
+Writers: `N1/server.py` (all distributed runs) and `DOC/baseline.py` (sequential
+runs). Workers do not write to the database.
+Readers: `N2/store.py` helpers and `DOC/plot.py`, opened read-only via
+`file:<path>?mode=ro`.
 
-Šema je definisana u `N2/store.py` (konstanta `SCHEMA`), a jedini pisac je
-`N1/server.py`.
-
-Otvaranje iz konzole:
+Open from the shell:
 
 ```bash
 sqlite3 results/runs.sqlite
 ```
 
-ili iz Pythona, read-only, bez rizika da se pokvari run koji traje:
+Open from Python:
 
 ```python
 from N2 import store
@@ -23,48 +23,82 @@ run = store.latest_run(db, "sync_n4")
 
 ---
 
-## Četiri tabele
+## Tables
 
-| Tabela | Zrno (jedan red je) | Redova u trenutnoj bazi |
+| Table | One row is | Rows currently |
 |---|---|---|
-| `runs` | jedan pokrenut eksperiment | 13 |
-| `rounds` | run × runda | 15 684 |
-| `worker_rounds` | run × runda × radnik | 33 248 |
-| `events` | diskretan događaj | 76 |
+| `runs` | one experiment run | 13 |
+| `rounds` | run x round | 15684 |
+| `worker_rounds` | run x round x worker | 33248 |
+| `events` | one discrete event | 76 |
 
-Sve tri detaljne tabele pokazuju na `runs(run_id)`. `run_id` je autoinkrement,
-pa je hronološki: veći `run_id` znači kasnije pokrenut run.
+`rounds`, `worker_rounds` and `events` reference `runs(run_id)`.
+`run_id` is `INTEGER PRIMARY KEY AUTOINCREMENT`, so it increases chronologically.
+
+Indexes: `idx_rounds_run` on `rounds(run_id)`, `idx_events_run` on
+`events(run_id)`, `idx_wr_run` on `worker_rounds(run_id, worker)`.
+
+Primary keys: `rounds(run_id, round)`, `worker_rounds(run_id, round, worker)`.
+`events` has no primary key.
 
 ---
 
-## `runs` — konfiguracija i zbirni ishod
+## Table `runs`
 
-Red se upisuje **na startu servera**, dok se još niko nije povezao, a dopunjuje
-se **na kraju** kroz `Store.finish()`.
+One row per run. Inserted at server startup, updated by `Store.finish()` at the
+end of the run.
 
-| Kolona | Jedinica | Kada se upisuje | Značenje |
-|---|---|---|---|
-| `run_id` | — | start | primarni ključ, autoinkrement |
-| `label` | — | start | `--label`, npr. `sync_n4`. **Nije jedinstven** |
-| `mode` | — | start | `sync`, `async` ili `sequential` |
-| `n_workers` | broj | start | očekivan broj radnika (`--workers`) |
-| `lr` | — | start | korak učenja |
-| `balance` | — | start | `static` ili `dynamic` |
-| `dataset` | — | start | uvek `mnist` |
-| `timeout_s` | s | start | prag detektora otkaza |
-| `interceptors` | tekst / JSON | start **i** kraj | vidi napomenu ispod |
-| `config` | JSON | start | ceo `config` rečnik, uključujući `batch_size`, `epochs`, `zlib`, `latency` |
-| `started_at` | Unix vreme | start | |
-| `finished_at` | Unix vreme | kraj | **`NULL` znači da run nije završen** |
-| `total_rounds` | broj | kraj | |
-| `total_samples` | broj | kraj | ukupno obrađenih uzoraka |
-| `total_bytes` | bajtova | kraj | primljeno na serveru, posle dekompresije lanca |
+| Column | Type | Unit | Written | Meaning |
+|---|---|---|---|---|
+| `run_id` | INTEGER | - | start | primary key, autoincrement |
+| `label` | TEXT | - | start | value of `--label`, e.g. `sync_n4`. Not unique |
+| `mode` | TEXT | - | start | `sync`, `async` or `sequential` |
+| `n_workers` | INTEGER | count | start | value of `--workers` |
+| `lr` | REAL | - | start | learning rate |
+| `balance` | TEXT | - | start | `static` or `dynamic` |
+| `dataset` | TEXT | - | start | always `mnist` |
+| `timeout_s` | REAL | seconds | start | failure-detector timeout |
+| `interceptors` | TEXT | - | start and end | see below |
+| `config` | TEXT (JSON) | - | start | full config dict |
+| `started_at` | REAL | Unix time | start | |
+| `finished_at` | REAL | Unix time | end | NULL if the run did not finish |
+| `total_rounds` | INTEGER | count | end | NULL if the run did not finish |
+| `total_samples` | INTEGER | count | end | NULL if the run did not finish |
+| `total_bytes` | INTEGER | bytes | end | received by the server after chain decode |
 
-### Dve zamke u ovoj tabeli
+### Column `config`
 
-**`interceptors` menja tip tokom života run-a.** Na startu je tu tekstualni
-`repr` lanca, npr. `Chain([zlib, metrics])`, jer izveštaj još ne postoji. Na
-kraju ga `finish()` prepiše JSON izveštajem sa izmerenim vrednostima:
+JSON object. Keys for a server run:
+`mode`, `workers`, `lr`, `balance`, `dataset`, `timeout`, `batch_size`,
+`epochs`, `zlib`, `latency`, `interceptors`.
+
+Example (`zlib_n4`):
+
+```json
+{"mode": "sync", "workers": 4, "lr": 0.05, "balance": "static",
+ "dataset": "mnist", "timeout": 8.0, "batch_size": 32, "epochs": 10,
+ "zlib": 6, "latency": 0.0, "interceptors": "Chain([zlib, metrics])"}
+```
+
+For a `sequential` run the keys `timeout`, `zlib`, `latency` and `interceptors`
+are absent:
+
+```json
+{"mode": "sequential", "workers": 1, "lr": 0.05, "balance": "static",
+ "dataset": "mnist", "batch_size": 128, "epochs": 10}
+```
+
+### Column `interceptors`
+
+The type of the value depends on whether the run finished.
+
+Unfinished run: the `repr` of the chain written at startup, a plain string.
+
+```
+Chain([metrics])
+```
+
+Finished run: a JSON object written by `finish()`, keyed by interceptor name.
 
 ```json
 {"zlib":    {"raw_bytes": 197478978, "wire_bytes": 160074323,
@@ -73,129 +107,162 @@ kraju ga `finish()` prepiše JSON izveštajem sa izmerenim vrednostima:
              "bytes_out": 160074323, "bytes_in": 54661627}}
 ```
 
-Ako run nije završen, u koloni ostane tekst — zato parsiranje kao JSON mora da
-podnese neuspeh. Figura 7 čita baš ovaj JSON.
+Possible keys and their fields:
 
-**`NULL` u `finished_at` nije greška u podacima, nego podatak.** Run
-`checkpoint_a` je namerno ubijen usred obuke, pa nema završne vrednosti. To je
-dokaz za stavku *Rad sa fajlovima* i ne treba ga „popravljati”.
+| Key | Fields |
+|---|---|
+| `float32` | `messages`, `bytes_saved` |
+| `zlib` | `raw_bytes`, `wire_bytes`, `ratio`, `cpu_seconds` |
+| `metrics` | `sent` (dict by message type), `recv` (dict by message type), `bytes_out`, `bytes_in` |
+| `latency` | `one_way_seconds`, `delayed_messages` |
 
-### Sekvencijalni baseline je poseban slučaj
+For the sequential baseline the value is `{}`.
+JSON parsing of this column must handle failure, because unfinished runs hold a
+non-JSON string.
 
-`baseline_b128` upisuje `DOC/baseline.py`, a ne server. Kolone koje opisuju
-mrežu tu nemaju smisla i to se vidi u podacima:
+### Current contents of `runs`
 
-| Kolona | Vrednost | Zašto |
-|---|---|---|
-| `mode` | `sequential` | nema ni servera ni radnika |
-| `timeout_s` | `NULL` | nema detektora otkaza |
-| `interceptors` | `{}` | nema lanca, poruke ne postoje |
-| `total_bytes` | `0` | ništa ne ide preko mreže |
+| run_id | label | mode | n_workers | balance | timeout_s | total_rounds | total_samples | total_bytes |
+|---|---|---|---|---|---|---|---|---|
+| 1 | baseline_b128 | sequential | 1 | static | NULL | 790 | 100000 | 0 |
+| 2 | sync_n1 | sync | 1 | static | 8.0 | 3130 | 100000 | 197368208 |
+| 3 | sync_n2 | sync | 2 | static | 8.0 | 1565 | 100000 | 197368006 |
+| 4 | sync_n4 | sync | 4 | static | 8.0 | 783 | 100064 | 197493716 |
+| 5 | async_n4 | async | 4 | static | 8.0 | 3130 | 100000 | 197368367 |
+| 6 | crash_n4 | sync | 4 | static | 8.0 | 794 | 99968 | 159659622 |
+| 7 | freeze_n4 | sync | 4 | static | 5.0 | 794 | 99968 | 159659622 |
+| 8 | compress_n4 | sync | 4 | static | 8.0 | 783 | 100064 | 99255404 |
+| 9 | zlib_n4 | sync | 4 | static | 8.0 | 783 | 100064 | 54674171 |
+| 10 | static_n4 | sync | 4 | static | 8.0 | 783 | 100064 | 197493716 |
+| 11 | balanced_n4 | sync | 4 | dynamic | 8.0 | 784 | 100079 | 197745944 |
+| 12 | checkpoint_a | sync | 2 | static | 8.0 | NULL | NULL | NULL |
+| 13 | checkpoint_b | sync | 2 | static | 8.0 | 1565 | 100000 | 193584646 |
 
-Piše u istu tabelu i istim redosledom kolona namerno, da bi figura 1 mogla da
-crta sekvencijalni i distribuirani run zajedno, bez posebnog puta za učitavanje.
-Ali svaki upit koji sabira saobraćaj mora da ga isključi, inače deli nulom.
+`lr` is 0.05 and `dataset` is `mnist` for every run.
+`run_id` 12 has `finished_at IS NULL`: the server process was killed mid-run.
 
 ---
 
-## `rounds` — vremenska serija obuke
+## Table `rounds`
 
-Jedan red po završenoj rundi, upisuje ga `write_row()` u `server.py`. U `sync`
-režimu red nastaje kad se barijera razreši, u `async` režimu na svaki `PUSH`.
+One row per completed round, written by `write_row()` in `N1/server.py` and by
+the loop in `DOC/baseline.py`. In `sync` mode a row is produced when the barrier
+resolves; in `async` mode on every `PUSH`.
 
-| Kolona | Jedinica | Kumulativno? | Značenje |
+| Column | Type | Unit | Cumulative | Meaning |
+|---|---|---|---|---|
+| `round` | INTEGER | count | - | round number, starts at 1 |
+| `samples` | INTEGER | count | yes | samples processed since the start of the run |
+| `train_loss` | REAL | - | no | batch loss, weighted by `n_samples` across workers |
+| `test_loss` | REAL | - | no | loss on the 2000-sample held-out set |
+| `test_acc` | REAL | fraction 0-1 | no | accuracy on the held-out set |
+| `wall_clock` | REAL | seconds | yes | since all workers were present |
+| `active_workers` | INTEGER | count | no | workers alive during that round |
+| `bytes_in` | INTEGER | bytes | yes | received by the server |
+| `mean_staleness` | REAL | rounds | no | weighted mean gradient staleness |
+| `round_seconds` | REAL | seconds | no | duration of that round |
+| `barrier_wait` | REAL | seconds | no | first `PUSH` to last `PUSH` in the round |
+
+Rounding applied on write: `train_loss`, `test_loss`, `test_acc` to 5 decimals;
+`wall_clock` to 4; `mean_staleness` to 3; `round_seconds`, `barrier_wait` to 5.
+
+### Evaluation cadence
+
+`test_loss` and `test_acc` are recomputed only when
+`round % eval_every == 0 or round == 1`. Default `--eval-every` is 5. Between
+evaluations the previous value is repeated; NULL is not written.
+
+Example, `run_id` 4:
+
+| round | test_acc | test_loss | train_loss |
 |---|---|---|---|
-| `round` | broj | — | redni broj runde, počinje od 1 |
-| `samples` | broj | **da** | ukupno uzoraka od početka run-a |
-| `train_loss` | — | ne | gubitak na batch-u, težinski prosek po radnicima |
-| `test_loss` | — | ne | na izdvojenih 2000 uzoraka |
-| `test_acc` | udeo 0–1 | ne | tačnost na test skupu |
-| `wall_clock` | s | **da** | od trenutka kad su svi radnici prisutni |
-| `active_workers` | broj | ne | koliko ih je bilo živo u toj rundi |
-| `bytes_in` | bajtova | **da** | ukupno primljeno na serveru |
-| `mean_staleness` | rundi | ne | koliko su gradijenti zaostajali |
-| `round_seconds` | s | ne | trajanje same runde |
-| `barrier_wait` | s | ne | od prvog do poslednjeg `PUSH`-a u rundi |
+| 4 | 0.26 | 2.25139 | 2.13825 |
+| 5 | 0.6095 | 2.06185 | 2.11922 |
+| 6 | 0.6095 | 2.06185 | 2.0553 |
+| 9 | 0.6095 | 2.06185 | 1.98427 |
+| 10 | 0.7185 | 1.861 | 1.9057 |
 
-### Šta treba znati pre nego što se ovo crta
+`train_loss` is computed every round.
 
-**`test_loss` i `test_acc` se ne računaju svake runde.** Evaluacija ide na
-svakih `--eval-every` rundi (podrazumevano 5) i u prvoj rundi, jer bi inače
-merenje trajalo duže od obuke. Između evaluacija se **prethodna vrednost
-ponavlja**, ne upisuje se `NULL`:
+### Value ranges in the current database
 
-| round | test_acc | train_loss |
-|---|---|---|
-| 4 | 0.26 | 2.13825 |
-| 5 | **0.6095** | 2.11922 |
-| 6 | 0.6095 | 2.05530 |
-| 9 | 0.6095 | 1.98427 |
-| 10 | **0.7185** | 1.90570 |
+- `mean_staleness` is 0.0 for every run except `run_id` 5 (`async_n4`), where it
+  ranges 0.0 to 7.0.
+- `barrier_wait` is 0.0 for `async` and `sequential` runs.
+- `bytes_in` is 0 for `run_id` 1 (`sequential`).
+- `active_workers` is 1 for `run_id` 1.
+- Round numbering: `run_id` 12 covers rounds 1-30, `run_id` 13 covers rounds
+  31-1565 (started with `--resume`). All other runs start at round 1.
 
-Zbog toga kriva tačnosti izgleda stepenasto na malom uvećanju. `train_loss` se,
-nasuprot tome, računa svake runde iz podataka koje radnici ionako šalju.
-
-**`samples`, `wall_clock` i `bytes_in` rastu**, ostale kolone su po rundi. Ako
-se traži propusnost, deli se poslednji `samples` poslednjim `wall_clock`-om, a
-ne sabiraju se kolone.
-
-**`mean_staleness` je nula u celom `sync` režimu** — to je definicija barijere.
-U `async` režimu ide do 7 u ovim merenjima. Poređenje te dve vrednosti je
-figura 3.
-
-**`barrier_wait` je u `async` režimu uvek 0**, jer barijere nema; kolona tamo
-nema značenje.
+`samples`, `wall_clock` and `bytes_in` are running totals. To get throughput,
+divide the last `samples` by the last `wall_clock`; do not sum the columns.
 
 ---
 
-## `worker_rounds` — podaci po pojedinačnom radniku
+## Table `worker_rounds`
 
-Ovo je tabela zbog koje CSV nije bio dovoljan: u red „po rundi” ne staje
-podatak koji postoji zasebno za svakog radnika.
+One row per worker per round, written by `DB.worker_row()` in `N1/server.py`
+when a `PUSH` arrives. Not written by `DOC/baseline.py`.
 
-| Kolona | Jedinica | Značenje |
+| Column | Type | Unit | Meaning |
+|---|---|---|---|
+| `round` | INTEGER | count | round the contribution belongs to |
+| `worker` | TEXT | - | `worker-1`, `worker-2`, ... |
+| `n_samples` | INTEGER | count | batch size assigned by the server |
+| `seconds` | REAL | seconds | from barrier release to arrival of the `PUSH` |
+| `staleness` | INTEGER | rounds | `server_round - message_round` |
+
+`seconds` is measured as `now - released_at[worker]`, so it includes network
+transfer and waiting, not only gradient computation. Rounded to 5 decimals.
+
+The value written is `rnd + 1`, i.e. the round the contribution belongs to
+rather than the last completed round.
+
+Example, `run_id` 11 (`balanced_n4`), round 100:
+
+| worker | n_samples | seconds | staleness |
+|---|---|---|---|
+| worker-1 | 10 | 0.00502 | 0 |
+| worker-2 | 40 | 0.00505 | 0 |
+| worker-3 | 39 | 0.00457 | 0 |
+| worker-4 | 39 | 0.00497 | 0 |
+
+Mean over rounds > 20:
+
+| label | mean barrier_wait (s) | mean round_seconds (s) |
 |---|---|---|
-| `round` | broj | runda kojoj doprinos pripada |
-| `worker` | tekst | `worker-1`, `worker-2`, … |
-| `n_samples` | broj | veličina batch-a koju je server dodelio |
-| `seconds` | s | od otpuštanja sa barijere do prispeća `PUSH`-a |
-| `staleness` | rundi | koliko je zaostajala verzija težina |
-
-Primer iz `balanced_n4`, runda 100 — vidi se šta balanser radi:
-
-| worker | n_samples | seconds |
-|---|---|---|
-| worker-1 | 10 | 0.00502 |
-| worker-2 | 40 | 0.00505 |
-| worker-3 | 39 | 0.00457 |
-| worker-4 | 39 | 0.00497 |
-
-Radnik 1 je četiri puta sporiji po uzorku, pa dobija četiri puta manji batch i
-stigne u isto vreme kad i ostali. `seconds` su izjednačeni, `n_samples` nisu —
-to je cilj, jer barijera čeka najsporijeg.
-
-Napomena o poravnanju: `seconds` meri **ceo obilazak**, uključujući mrežu i
-čekanje, a ne samo računanje gradijenta. Zato je to prava veličina za
-balansiranje, ali nije čisto vreme računanja.
+| static_n4 | 0.00993 | 0.01568 |
+| balanced_n4 | 0.00066 | 0.00676 |
 
 ---
 
-## `events` — diskretni događaji
+## Table `events`
 
-Jedini deo baze koji se potvrđuje odmah (`commit` posle svakog reda), da
-događaj preživi i ako server bude ubijen.
+Written by `DB.event()` and committed immediately, unlike `rounds` and
+`worker_rounds`.
 
-| `kind` | Kada | `detail` sadrži |
+| Column | Type | Meaning |
 |---|---|---|
-| `registered` | radnik pošalje `PULL` | popunjenost klastera, npr. `3/4` |
-| `evicted` | radnik ispadne | razlog: `timeout` ili `connection closed` |
+| `run_id` | INTEGER | run the event belongs to |
+| `ts` | REAL | Unix time of the event |
+| `round` | INTEGER | server round counter at the time of the event |
+| `worker` | TEXT | worker id |
+| `kind` | TEXT | `registered` or `evicted` |
+| `detail` | TEXT | see below |
 
-U trenutnoj bazi: 39 registracija i 37 izbacivanja.
+| `kind` | Trigger | `detail` |
+|---|---|---|
+| `registered` | worker sends `PULL` | cluster fill, e.g. `3/4` |
+| `evicted` | worker removed | `timeout`, `connection closed`, `send failed`, or `push from evicted worker` |
 
-**Većina izbacivanja nisu kvarovi.** Kad se budžet uzoraka potroši, radnici
-uredno zatvore vezu i server ih ukloni istim putem kojim uklanja i otkazale
-čvorove — zato skoro svaki run ima izbacivanja u poslednjoj rundi. Prava
-injekcija kvara se prepoznaje po tome što se dogodila **usred** run-a:
+Counts in the current database: 39 `registered`, 37 `evicted`.
+
+`registered` events carry `round = 0`, because registration happens before the
+first round completes.
+
+Most `evicted` rows occur at the last round of a run: when the sample budget is
+spent, workers close the connection and the server removes them through the same
+path it uses for failures. Evictions that occur mid-run:
 
 ```sql
 SELECT r.label, e.round, e.worker, e.detail
@@ -204,55 +271,42 @@ WHERE e.kind = 'evicted' AND r.label IN ('crash_n4', 'freeze_n4')
 ORDER BY e.round LIMIT 3;
 ```
 
-daje:
-
 | label | round | worker | detail |
 |---|---|---|---|
-| crash_n4 | 150 | worker-1 | `connection closed` |
-| freeze_n4 | 150 | worker-1 | `timeout` |
-| crash_n4 | 794 | worker-4 | `connection closed` |
+| crash_n4 | 150 | worker-1 | connection closed |
+| freeze_n4 | 150 | worker-1 | timeout |
+| crash_n4 | 794 | worker-4 | connection closed |
 
-Prva dva reda su cela poenta otpornosti na otkaze, i to u dva različita oblika.
-**Pad procesa** zatvori soket, pa ga operativni sistem prijavi odmah — razlog je
-`connection closed`. **Zamrznut radnik** drži soket otvorenim i ne šalje ništa,
-pa se ne može razlikovati od radnika koji samo dugo računa; njega otkriva tek
-istek tajmauta i razlog je `timeout`. Treći red je normalan kraj run-a.
-
-Da je obuka preživela, vidi se poređenjem: kvar je u rundi 150, a `rounds` za
-isti run ide do 794.
+`run_id` 6 and 7 both continue to round 794 after the round-150 eviction.
 
 ---
 
-## Čega u bazi *nema*
+## Not stored in the database
 
-Namerno, da fajl ne bi rastao bez potrebe:
-
-- **Težine modela** — one idu u `checkpoints/w.npz` preko `N2/checkpoint.py`.
-- **Sami gradijenti** — postoje samo u mreži i u memoriji servera.
-- **MNIST** — keširan je u `mnist.npz` i nije rezultat merenja.
-- **Ispis konzole** — nije nigde snimljen; poruka `resumed from ... at round N`
-  se vidi samo uživo, ali se isti podatak može pročitati iz `rounds` (vidi
-  ispod).
+- Model weights: written to `checkpoints/w.npz` by `N2/checkpoint.py`.
+- Gradients: exist only in messages and in server memory.
+- The MNIST dataset: cached in `mnist.npz` by `N1/common.py`.
+- Console output: not persisted.
 
 ---
 
-## Koja figura koristi koje kolone
+## Columns used by each figure
 
-| Figura | Tabela | Kolone |
+| Figure | Table | Columns |
 |---|---|---|
-| 1 — ispravnost | `rounds` | `samples`, `test_acc` |
-| 2 — ubrzanje | `rounds` | `wall_clock`, `test_acc`, `samples` |
-| 3 — sync/async | `rounds` | `wall_clock`, `test_acc`, `mean_staleness` |
-| 4 — otpornost | `rounds` | `round`, `test_acc`, `round_seconds`, `active_workers` |
-| 5 — saobraćaj | `rounds` | `samples`, `bytes_in` |
-| 6 — balansiranje | `worker_rounds` + `rounds` | `n_samples`, `seconds`, `barrier_wait` |
-| 7 — interceptori | `runs` | `interceptors` (JSON) |
+| 1 correctness | `rounds` | `samples`, `test_acc` |
+| 2 speedup | `rounds` | `wall_clock`, `test_acc`, `samples` |
+| 3 sync vs async | `rounds` | `wall_clock`, `test_acc`, `mean_staleness` |
+| 4 fault tolerance | `rounds` | `round`, `test_acc`, `round_seconds`, `active_workers` |
+| 5 bandwidth | `rounds` | `samples`, `bytes_in` |
+| 6 load balancing | `worker_rounds`, `rounds` | `n_samples`, `seconds`, `barrier_wait` |
+| 7 interceptors | `runs` | `interceptors` (JSON) |
 
 ---
 
-## Korisni upiti
+## Queries
 
-**Pregled svih run-ova:**
+All runs:
 
 ```sql
 SELECT run_id, label, mode, n_workers, total_rounds, total_samples,
@@ -260,7 +314,7 @@ SELECT run_id, label, mode, n_workers, total_rounds, total_samples,
 FROM runs ORDER BY run_id;
 ```
 
-**Završna tačnost svakog run-a:**
+Final accuracy per run:
 
 ```sql
 SELECT r.label, MAX(d.round) AS last_round, d.test_acc
@@ -268,45 +322,52 @@ FROM rounds d JOIN runs r USING (run_id)
 GROUP BY r.run_id ORDER BY r.run_id;
 ```
 
-**Dokaz da je `--resume` proradio** — gde jedan run stane, drugi nastavi:
+Round coverage of the checkpoint runs:
 
 ```sql
-SELECT r.label, MIN(d.round) AS od, MAX(d.round) AS do_
+SELECT r.label, MIN(d.round) AS first_round, MAX(d.round) AS last_round
 FROM rounds d JOIN runs r USING (run_id)
 WHERE r.label LIKE 'checkpoint%' GROUP BY r.run_id;
 ```
 
-Daje `checkpoint_a` od 1 do 30 i `checkpoint_b` od 31 do 1565: bez preklapanja
-i bez rupe.
-
-**Prosečno čekanje na barijeri, statički prema dinamičkom** (prvih 20 rundi se
-preskače jer balanser tek uči brzine):
+Mean barrier wait, static vs dynamic, skipping the first 20 rounds:
 
 ```sql
-SELECT r.label, ROUND(AVG(d.barrier_wait), 4) AS wait_s
+SELECT r.label, ROUND(AVG(d.barrier_wait), 5) AS wait_s
 FROM rounds d JOIN runs r USING (run_id)
 WHERE r.label IN ('static_n4', 'balanced_n4') AND d.round > 20
 GROUP BY r.run_id;
 ```
 
+Throughput of a run:
+
+```sql
+SELECT r.label,
+       MAX(d.samples) * 1.0 / MAX(d.wall_clock) AS samples_per_second
+FROM rounds d JOIN runs r USING (run_id)
+GROUP BY r.run_id;
+```
+
+Per-worker totals within one run:
+
+```sql
+SELECT worker, COUNT(*) AS rounds, SUM(n_samples) AS samples,
+       ROUND(AVG(seconds), 5) AS mean_seconds
+FROM worker_rounds WHERE run_id = 11 GROUP BY worker;
+```
+
 ---
 
-## Pravila kojih se treba držati
+## Access rules
 
-**Ista labela može da postoji više puta.** Ponovno pokretanje ne briše stari
-run, nego dodaje novi. Zato svako čitanje ide kroz `store.latest_run()`, koji
-uzima najveći `run_id` za datu labelu. Ako se poredi „ručno”, mora se filtrirati
-po `run_id`, inače se mešaju dva različita merenja.
-
-**Piše samo server.** Radnici bazu ne dodiruju, pa postoji tačno jedan pisac i
-klasičan SQLite problem sa više pisaca se ne javlja.
-
-**WAL režim je uključen** (`PRAGMA journal_mode=WAL`) da bi `plot.py` mogao da
-čita bazu dok run još traje. Zbog toga pored `.sqlite` nastaju i
-`.sqlite-wal` i `.sqlite-shm`; to su privremeni fajlovi, sadržaj im se prelije
-u glavni fajl kad se poslednja veza zatvori, i zato su u `.gitignore`.
-
-**Redovi po rundi se ne potvrđuju odmah** nego na svakih 50 rundi kroz
-`flush()`, jer bi upis na disk svake runde bio skuplji od same obuke. Pre
-svakog checkpointa ide dodatni `flush()`, da posle pada važi pravilo: baza
-sadrži bar onu rundu koja piše u checkpointu.
+- `label` is not unique. Re-running an experiment inserts a new row instead of
+  replacing the old one. `store.latest_run()` selects the highest `run_id` for a
+  label. Manual queries must filter by `run_id`.
+- Only the server writes, so there is a single writer.
+- WAL is enabled (`PRAGMA journal_mode=WAL`), `PRAGMA synchronous=NORMAL`.
+  `results/runs.sqlite-wal` and `results/runs.sqlite-shm` appear alongside the
+  database and are listed in `.gitignore`.
+- `rounds` and `worker_rounds` rows are committed every 50 rounds by `flush()`,
+  and once more before every checkpoint write. `events` rows and the `runs` row
+  are committed immediately.
+- `smoke_test.py` writes to `results/smoke/smoke.sqlite`, a separate file.

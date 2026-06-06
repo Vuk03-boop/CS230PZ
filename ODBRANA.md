@@ -36,6 +36,70 @@ postoji — to je referentna kriva sa kojom se poredi svaki distribuirani run.
 
 ---
 
+## Fajlovi i biblioteke
+
+### Šta koji fajl radi i šta u njemu koristi
+
+| Fajl | Uloga | Biblioteke i za šta baš tu |
+|---|---|---|
+| `N1/common.py` | preuzimanje i keširanje MNIST-a, podela na train/test, model, gradijent, evaluacija | `numpy` (softmax, `Xb @ W`, one-hot, `savez_compressed` keša), `sklearn.datasets.fetch_openml` (samo pri prvom preuzimanju), `os` (putanja keša) |
+| `N1/net.py` | framing poruka preko TCP-a i poziv lanca interceptora | `struct` (`Struct("!I")`, prefiks dužine), `pickle` (serijalizacija poruke) |
+| `N1/server.py` | parameter server: `select()` petlja, barijera, detektor otkaza, dodela posla, upis metrika | `socket` (slušajući soket, `TCP_NODELAY`), `select` (multipleksiranje), `numpy` (`np.tensordot`, `np.average` za težinski prosek), `time` (merenja i timeout), `argparse` |
+| `N1/worker.py` | radni čvor: gradijent nad dodeljenim opsegom, injekcija kvara | `socket` (`create_connection`), `os` (`os._exit(1)` za tvrd pad), `time` (`sleep` za zamrzavanje i simuliranu sporost), `sys`, `argparse` |
+| `N2/interceptors.py` | middleware lanac: float32 gradijenti, deflate, metrike, veštačko kašnjenje | `zlib` (`compress`/`decompress`), `numpy` (`astype(np.float32)`, provera `dtype`), `time` (`perf_counter` za CPU cenu kompresije) |
+| `N2/store.py` | SQLite šema, upis metrika, čitanje rezultata | `sqlite3` (šema, WAL, upisi), `json` (kolone `config` i `interceptors`), `os`, `time`, `pandas` (samo u funkcijama za čitanje) |
+| `N2/balancer.py` | EWMA brzine po radniku, podela globalnog batch-a, kursor kroz skup | **nijedna** — čist Python, bez ijednog `import`-a |
+| `N2/checkpoint.py` | atomsko snimanje i učitavanje težina | `numpy` (`savez`/`load` za `.npz`), `os` (`fsync`, `replace`, `makedirs`) |
+| `DOC/baseline.py` | sekvencijalni referentni run, bez mreže | `argparse`, `time`; model i bazu uzima iz `N1/common.py` i `N2/store.py` |
+| `DOC/plot.py` | crta svih sedam figura iz baze | `matplotlib` (backend `Agg`), posredno `pandas` kroz `store` |
+| `DOC/run_experiments.sh` | pokreće sve run-ove iza figura | bash; bira interpreter iz `.venv` i postavlja `PYTHONPATH` |
+| `smoke_test.py` | pokreće svaki režim od kraja do kraja, po jednu epohu | `subprocess` (server i radnici kao zasebni procesi), `os`, `sys`, `time` |
+
+Da `N2/balancer.py` nema nijedan uvoz nije slučajno: logika balansiranja ne zna
+ni za mrežu ni za numpy, pa se može testirati bez klastera.
+
+### Standardna biblioteka — gde i zašto
+
+| Modul | Gde | Zašto baš on |
+|---|---|---|
+| `socket` | `server.py`, `worker.py` | Tema traži rad direktno nad soketima. `TCP_NODELAY` je uključen jer Nagle-ov algoritam spaja male pakete i u ping-pong protokolu unosi kašnjenje reda desetina milisekundi. |
+| `select` | `server.py` | Jedan tok izvršavanja nad svim vezama, pa nema zaključavanja oko `W`. Timeout od 0.5 s postoji da bi se detektor otkaza izvršavao i kada nema saobraćaja. |
+| `struct` | `net.py` | Fiksni binarni prefiks dužine je ono što tok bajtova pretvara u tok poruka. `"!I"` je mrežni redosled bajtova, pa protokol ne zavisi od arhitekture mašine. |
+| `pickle` | `net.py` | Serijalizuje `dict` sa numpy nizom u jednom pozivu. JSON ne ume numpy niz bez ručnog pretvaranja u listu, što bi uvećalo i veličinu poruke i vreme. |
+| `zlib` | `interceptors.py` | Deflate je u standardnoj biblioteci, pa kompresija ne uvodi novu zavisnost. Nivo je parametar (`--zlib 1-9`) da bi se odnos kompresije i CPU cene mogao meriti. |
+| `sqlite3` | `store.py` | Baza u standardnoj biblioteci: jedan fajl, bez servera koji se instalira i pokreće. Podržava WAL, što je uslov da `plot.py` čita dok run traje. |
+| `json` | `store.py` | Kolone `config` i `interceptors` menjaju oblik sa zastavicama, pa im ne odgovara fiksna šema. |
+| `argparse` | `server.py`, `worker.py`, `baseline.py` | Sve nadogradnje su zastavice sa podrazumevanim vrednostima koje reprodukuju originalno ponašanje. |
+| `os` | `checkpoint.py`, `common.py`, `worker.py` | `os.replace` i `os.fsync` su nosioci atomskog upisa; `os._exit(1)` je tvrd pad bez čišćenja, što je upravo ono što se testira. |
+| `time` | svuda | Merenje trajanja rundi, EWMA, timeout, simulirana sporost. `perf_counter()` se koristi tamo gde se meri CPU cena, `time()` tamo gde treba apsolutan trenutak. |
+| `subprocess` | `smoke_test.py` | Klaster mora da bude više procesa da bi test uopšte bio distribuiran. |
+
+### Biblioteke trećih strana — gde i zašto
+
+| Biblioteka | Gde | Za šta | Zašto |
+|---|---|---|---|
+| `numpy` | `common.py`, `server.py`, `checkpoint.py`, `interceptors.py` | matrična aritmetika modela, težinski prosek gradijenata, `.npz` checkpoint, sužavanje tipa | Petlja u čistom Pythonu nad matricom 785×10 bila bi red veličine sporija, a projekat meri vreme — sporo računanje bi zamaglilo mrežne efekte koji se ispituju. |
+| `scikit-learn` | samo `common._download_mnist()` | `fetch_openml("mnist_784")` | Koristi se **isključivo** za jednokratno preuzimanje skupa, ne za učenje. Posle prvog pokretanja projekat radi i bez nje, iz keša `mnist.npz`. |
+| `pandas` | `store.rounds_of()`, `store.worker_balance()`, posredno `plot.py` | `read_sql_query` vraća DataFrame nad kojim `plot.py` radi `groupby` i `rolling` | Uvozi se **lokalno u funkciji**, ne na vrhu modula, pa server i radnici ne plaćaju njen uvoz iako uvoze `store`. |
+| `matplotlib` | `plot.py` | svih sedam figura | Backend je `Agg`, jer se crta u PNG bez otvaranja prozora, pa figure mogu da se generišu i iz skripte bez grafičkog okruženja. |
+
+Verzije sa kojima su napravljeni rezultati: Python 3.14.5, numpy 2.5.1,
+pandas 3.0.5, matplotlib 3.11.1, scikit-learn 1.9.0.
+
+### Šta se namerno *ne* koristi
+
+- **ZeroMQ, gRPC ili bilo koji RPC okvir.** Tema traži rad direktno nad
+  soketima; framing, barijera i detekcija otkaza su baš ono što se ocenjuje, a
+  okvir bi ih sakrio.
+- **PyTorch, TensorFlow ili drugi ML okvir.** Gradijent softmax regresije je
+  jedan izraz; okvir ne bi doneo ništa, a sakrio bi to što se distribuira.
+- **`threading` i `asyncio` u serveru.** `select()` daje jedan tok izvršavanja i
+  time izbegava zaključavanje oko jedine kopije `W`.
+- **`pandas` na putanji upisa.** Server piše samo kroz `sqlite3`; pandas se
+  pojavljuje tek pri čitanju rezultata.
+
+---
+
 ## N1 — Klijent-server (3 boda)
 
 **Fajlovi:** `N1/net.py`, `N1/server.py`, `N1/worker.py`
