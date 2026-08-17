@@ -1,3 +1,4 @@
+
 # virtuelno okruzenje
 .venv/
 venv/
@@ -11,8 +12,8 @@ __pycache__/
 mnist.npz
 
 # izlaz koji se generise iz results/
-figures/
-checkpoints/
+Depreciated/figures/
+Depreciated/checkpoints/
 
 # smoke test samo proverava da svaki rezim prolazi, njegova baza nije rezultat
 results/smoke/

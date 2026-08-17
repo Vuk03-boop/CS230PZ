@@ -70,17 +70,17 @@ figures/  generisane figure (PNG)
 
 | Fajl | Uloga |
 |---|---|
-| `N1/common.py` | MNIST, model, gradijent, evaluacija |
-| `N1/net.py` | framing poruka preko TCP-a |
-| `N1/server.py` | parameter server: barijera, detekcija otkaza, dodela posla |
-| `N1/worker.py` | radni čvor i injekcija kvara |
-| `N2/interceptors.py` | lanac interceptora |
-| `N2/balancer.py` | procena brzine i dodela veličine batch-a |
-| `N2/checkpoint.py` | atomski checkpoint težina |
-| `N2/store.py` | SQLite šema i čitanje |
-| `DOC/baseline.py` | sekvencijalni referentni run |
-| `DOC/plot.py` | sve figure |
-| `DOC/run_experiments.sh` | svi run-ovi iza figura |
+| `../N1/common.py` | MNIST, model, gradijent, evaluacija |
+| `../N1/net.py` | framing poruka preko TCP-a |
+| `../N1/server.py` | parameter server: barijera, detekcija otkaza, dodela posla |
+| `../N1/worker.py` | radni čvor i injekcija kvara |
+| `../N2/interceptors.py` | lanac interceptora |
+| `../N2/balancer.py` | procena brzine i dodela veličine batch-a |
+| `../N2/checkpoint.py` | atomski checkpoint težina |
+| `../N2/store.py` | SQLite šema i čitanje |
+| `../DOC/baseline.py` | sekvencijalni referentni run |
+| `../DOC/plot.py` | sve figure |
+| `../DOC/run_experiments.sh` | svi run-ovi iza figura |
 | `smoke_test.py` | provera svih režima od kraja do kraja |
 
 ## Rezultati
@@ -107,4 +107,4 @@ istu putanju kao osnovna verzija.
 
 - [ODBRANA.md](ODBRANA.md) — objašnjenje po stavkama iz tabele za ocenjivanje,
   korišćene biblioteke i očekivana pitanja
-- [BAZA.md](BAZA.md) — rečnik podataka za `results/runs.sqlite`
+- [BAZA.md](BAZA.md) — rečnik podataka za `../results/runs.sqlite`

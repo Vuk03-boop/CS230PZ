@@ -10,7 +10,7 @@ PY = sys.executable
 # Smoke test pise u svoju bazu, odvojenu od results/runs.sqlite. Njegovi runovi
 # traju jednu epohu i sluze samo da se vidi da svaki rezim prolazi od kraja do
 # kraja, pa nemaju sta da traze medju merenjima iz kojih se crtaju figure.
-SMOKE_DB = os.path.join(HERE, "results", "smoke", "smoke.sqlite")
+SMOKE_DB = os.path.join(HERE, "../results", "smoke", "smoke.sqlite")
 os.makedirs(os.path.dirname(SMOKE_DB), exist_ok=True)
 
 
@@ -18,14 +18,14 @@ os.makedirs(os.path.dirname(SMOKE_DB), exist_ok=True)
 def run_cluster(name, port, server_args, worker_args_list, wait=120):
     print(f"\n{'='*70}\n{name}\n{'='*70}")
     srv = subprocess.Popen(
-        [PY, os.path.join(HERE, "N1/server.py"), "--port", str(port)] + server_args,
+        [PY, os.path.join(HERE, "../N1/server.py"), "--port", str(port)] + server_args,
         cwd=HERE, env=ENV, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
         text=True)
     time.sleep(2.5)
     ws = []
     for wa in worker_args_list:
         ws.append(subprocess.Popen(
-            [PY, os.path.join(HERE, "N1/worker.py"), "--port", str(port)] + wa,
+            [PY, os.path.join(HERE, "../N1/worker.py"), "--port", str(port)] + wa,
             cwd=HERE, env=ENV, stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT, text=True))
     try:
@@ -115,7 +115,7 @@ if __name__ == "__main__":
     # upisu, a to se videlo samo u run_experiments.sh. Ovaj scenario samo
     # proverava da se checkpoint uopste napravi i procita.
     if which in ("all", "checkpoint"):
-        ckpt = os.path.join(HERE, "results", "smoke", "w.npz")
+        ckpt = os.path.join(HERE, "../results", "smoke", "w.npz")
         if os.path.exists(ckpt):
             os.remove(ckpt)
         run_cluster(

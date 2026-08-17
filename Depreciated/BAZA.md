@@ -1,10 +1,10 @@
 # Database reference
 
-File: `results/runs.sqlite`. SQLite 3, WAL journal mode.
-Schema: `N2/store.py`, constant `SCHEMA`.
-Writers: `N1/server.py` (all distributed runs) and `DOC/baseline.py` (sequential
+File: `../results/runs.sqlite`. SQLite 3, WAL journal mode.
+Schema: `../N2/store.py`, constant `SCHEMA`.
+Writers: `../N1/server.py` (all distributed runs) and `../DOC/baseline.py` (sequential
 runs). Workers do not write to the database.
-Readers: `N2/store.py` helpers and `DOC/plot.py`, opened read-only via
+Readers: `../N2/store.py` helpers and `../DOC/plot.py`, opened read-only via
 `file:<path>?mode=ro`.
 
 Open from the shell:
@@ -17,7 +17,8 @@ Open from Python:
 
 ```python
 from N2 import store
-db = store.connect("results/runs.sqlite")
+
+db = store.connect("../results/runs.sqlite")
 run = store.latest_run(db, "sync_n4")
 ```
 
@@ -283,7 +284,7 @@ ORDER BY e.round LIMIT 3;
 
 ## Not stored in the database
 
-- Model weights: written to `checkpoints/w.npz` by `N2/checkpoint.py`.
+- Model weights: written to `Depreciated/checkpoints/w.npz` by `N2/checkpoint.py`.
 - Gradients: exist only in messages and in server memory.
 - The MNIST dataset: cached in `mnist.npz` by `N1/common.py`.
 - Console output: not persisted.

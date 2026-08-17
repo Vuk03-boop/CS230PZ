@@ -31,7 +31,7 @@ Jedna runda:
 4. Server kombinuje gradijente, ažurira `W`, i ciklus se ponavlja.
 
 Ključna tvrdnja koju projekat dokazuje: **N sinhronih radnika sa batch-om B
-matematički je ekvivalentno jednom čvoru sa batch-om N×B.** Zato `DOC/baseline.py`
+matematički je ekvivalentno jednom čvoru sa batch-om N×B.** Zato `../DOC/baseline.py`
 postoji — to je referentna kriva sa kojom se poredi svaki distribuirani run.
 
 ---
@@ -42,20 +42,20 @@ postoji — to je referentna kriva sa kojom se poredi svaki distribuirani run.
 
 | Fajl | Uloga | Biblioteke i za šta baš tu |
 |---|---|---|
-| `N1/common.py` | preuzimanje i keširanje MNIST-a, podela na train/test, model, gradijent, evaluacija | `numpy` (softmax, `Xb @ W`, one-hot, `savez_compressed` keša), `sklearn.datasets.fetch_openml` (samo pri prvom preuzimanju), `os` (putanja keša) |
-| `N1/net.py` | framing poruka preko TCP-a i poziv lanca interceptora | `struct` (`Struct("!I")`, prefiks dužine), `pickle` (serijalizacija poruke) |
-| `N1/server.py` | parameter server: `select()` petlja, barijera, detektor otkaza, dodela posla, upis metrika | `socket` (slušajući soket, `TCP_NODELAY`), `select` (multipleksiranje), `numpy` (`np.tensordot`, `np.average` za težinski prosek), `time` (merenja i timeout), `argparse` |
-| `N1/worker.py` | radni čvor: gradijent nad dodeljenim opsegom, injekcija kvara | `socket` (`create_connection`), `os` (`os._exit(1)` za tvrd pad), `time` (`sleep` za zamrzavanje i simuliranu sporost), `sys`, `argparse` |
-| `N2/interceptors.py` | middleware lanac: float32 gradijenti, deflate, metrike, veštačko kašnjenje | `zlib` (`compress`/`decompress`), `numpy` (`astype(np.float32)`, provera `dtype`), `time` (`perf_counter` za CPU cenu kompresije) |
-| `N2/store.py` | SQLite šema, upis metrika, čitanje rezultata | `sqlite3` (šema, WAL, upisi), `json` (kolone `config` i `interceptors`), `os`, `time`, `pandas` (samo u funkcijama za čitanje) |
-| `N2/balancer.py` | EWMA brzine po radniku, podela globalnog batch-a, kursor kroz skup | **nijedna** — čist Python, bez ijednog `import`-a |
-| `N2/checkpoint.py` | atomsko snimanje i učitavanje težina | `numpy` (`savez`/`load` za `.npz`), `os` (`fsync`, `replace`, `makedirs`) |
-| `DOC/baseline.py` | sekvencijalni referentni run, bez mreže | `argparse`, `time`; model i bazu uzima iz `N1/common.py` i `N2/store.py` |
-| `DOC/plot.py` | crta svih sedam figura iz baze | `matplotlib` (backend `Agg`), posredno `pandas` kroz `store` |
-| `DOC/run_experiments.sh` | pokreće sve run-ove iza figura | bash; bira interpreter iz `.venv` i postavlja `PYTHONPATH` |
+| `../N1/common.py` | preuzimanje i keširanje MNIST-a, podela na train/test, model, gradijent, evaluacija | `numpy` (softmax, `Xb @ W`, one-hot, `savez_compressed` keša), `sklearn.datasets.fetch_openml` (samo pri prvom preuzimanju), `os` (putanja keša) |
+| `../N1/net.py` | framing poruka preko TCP-a i poziv lanca interceptora | `struct` (`Struct("!I")`, prefiks dužine), `pickle` (serijalizacija poruke) |
+| `../N1/server.py` | parameter server: `select()` petlja, barijera, detektor otkaza, dodela posla, upis metrika | `socket` (slušajući soket, `TCP_NODELAY`), `select` (multipleksiranje), `numpy` (`np.tensordot`, `np.average` za težinski prosek), `time` (merenja i timeout), `argparse` |
+| `../N1/worker.py` | radni čvor: gradijent nad dodeljenim opsegom, injekcija kvara | `socket` (`create_connection`), `os` (`os._exit(1)` za tvrd pad), `time` (`sleep` za zamrzavanje i simuliranu sporost), `sys`, `argparse` |
+| `../N2/interceptors.py` | middleware lanac: float32 gradijenti, deflate, metrike, veštačko kašnjenje | `zlib` (`compress`/`decompress`), `numpy` (`astype(np.float32)`, provera `dtype`), `time` (`perf_counter` za CPU cenu kompresije) |
+| `../N2/store.py` | SQLite šema, upis metrika, čitanje rezultata | `sqlite3` (šema, WAL, upisi), `json` (kolone `config` i `interceptors`), `os`, `time`, `pandas` (samo u funkcijama za čitanje) |
+| `../N2/balancer.py` | EWMA brzine po radniku, podela globalnog batch-a, kursor kroz skup | **nijedna** — čist Python, bez ijednog `import`-a |
+| `../N2/checkpoint.py` | atomsko snimanje i učitavanje težina | `numpy` (`savez`/`load` za `.npz`), `os` (`fsync`, `replace`, `makedirs`) |
+| `../DOC/baseline.py` | sekvencijalni referentni run, bez mreže | `argparse`, `time`; model i bazu uzima iz `../N1/common.py` i `../N2/store.py` |
+| `../DOC/plot.py` | crta svih sedam figura iz baze | `matplotlib` (backend `Agg`), posredno `pandas` kroz `store` |
+| `../DOC/run_experiments.sh` | pokreće sve run-ove iza figura | bash; bira interpreter iz `.venv` i postavlja `PYTHONPATH` |
 | `smoke_test.py` | pokreće svaki režim od kraja do kraja, po jednu epohu | `subprocess` (server i radnici kao zasebni procesi), `os`, `sys`, `time` |
 
-Da `N2/balancer.py` nema nijedan uvoz nije slučajno: logika balansiranja ne zna
+Da `../N2/balancer.py` nema nijedan uvoz nije slučajno: logika balansiranja ne zna
 ni za mrežu ni za numpy, pa se može testirati bez klastera.
 
 ### Standardna biblioteka — gde i zašto
@@ -102,7 +102,7 @@ pandas 3.0.5, matplotlib 3.11.1, scikit-learn 1.9.0.
 
 ## N1 — Klijent-server (3 boda)
 
-**Fajlovi:** `N1/net.py`, `N1/server.py`, `N1/worker.py`
+**Fajlovi:** `../N1/net.py`, `../N1/server.py`, `../N1/worker.py`
 
 ### Zašto sopstveni protokol umesto biblioteke
 
@@ -240,7 +240,7 @@ Ovo **nisu isti eksperiment** i ne smeju se predstaviti kao jedan.
 
 ## N1 — Rad sa fajlovima (2 boda)
 
-**Fajlovi:** `N2/checkpoint.py`, `N1/common.py`
+**Fajlovi:** `../N2/checkpoint.py`, `../N1/common.py`
 
 ### Dve vrste rada sa fajlovima u projektu
 
@@ -291,7 +291,7 @@ oporavi od njega.
 
 ## N2 — Middleware / Wrapperi / Brokeri / Interceptori (3 boda)
 
-**Fajl:** `N2/interceptors.py`
+**Fajl:** `../N2/interceptors.py`
 
 ### Definicija
 
@@ -367,7 +367,7 @@ a ne veličinu pickle-a.
 
 ## N2 — Rad sa bazom (3 boda)
 
-**Fajl:** `N2/store.py`
+**Fajl:** `../N2/store.py`
 
 ### Zašto baza, a ne samo CSV
 
@@ -427,7 +427,7 @@ run sa datom labelom.
 
 ## N2 — Load balancer (2 boda)
 
-**Fajl:** `N2/balancer.py`
+**Fajl:** `../N2/balancer.py`
 
 ### Problem koji rešava
 
